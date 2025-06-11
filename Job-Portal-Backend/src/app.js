@@ -59,10 +59,13 @@ app.post('/login', (req, res) => {
 
 
 app.use(cors({
-  origin: ["http://localhost:3001", "http://192.168.0.4:3001"],
+  origin: [
+    "https://frontend-fidecolab.vercel.app"
+  ],
   credentials: true,
   exposedHeaders: ['set-cookie', 'Authorization']
 }));
+
 
 
 app.use(cookieParser(process.env.COOKIE_SECRET));
@@ -82,7 +85,9 @@ const server = http.createServer(app);
 // Configurar Socket.IO
 const io = new Server(server, {
   cors: {
-    origin: ["http://localhost:3001", "http://192.168.0.4:3001"],
+    origin: [
+      "https://frontend-fidecolab.vercel.app"
+    ],
     credentials: true,
     methods: ["GET", "POST", "PUT", "DELETE"],
     allowedHeaders: ['Cookie', 'Authorization']
@@ -92,9 +97,10 @@ const io = new Server(server, {
     httpOnly: true,
     path: "/",
     sameSite: "Lax",
-    secure: false
+    secure: true   // en producción debe ser true
   }
 });
+
 
 // Constantes
 const salas = {};
