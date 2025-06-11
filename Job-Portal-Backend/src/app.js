@@ -17,6 +17,7 @@ import simulationRoutes from './routes/SimulacionRoutes.js';
 import seedrandom from 'seedrandom';
 
 const app = express();
+app.set('trust proxy', 1);
 const pool = await poolPromise;
 
 // Configuraciones de Express
