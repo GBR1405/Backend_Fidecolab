@@ -152,3 +152,39 @@ export const checkGroup = async (req, res) => {
         res.status(500).json({ message: 'Error al verificar el grupo' });
     }
 };
+
+export const checkActivity = async (req, res) => {
+  try {
+    const { partidaId } = req.body;
+    const pool = await poolPromise;
+
+    const result = await pool.request()
+      .input('partidaId', sql.Int, partidaId)
+      .query(`
+        SELECT EstadoPartida 
+        FROM Partida_TB
+        WHERE Partida_ID_PK = @partidaId;
+      `);
+
+    // Si no se encuentra la partida, se asume finalizada por seguridad
+    if (!result.recordset.length) {
+      return res.status(200).json({
+        isFinished: true,
+        partidaId,
+        reason: 'Partida no encontrada'
+      });
+    }
+
+    const estado = result.recordset[0].EstadoPartida;
+
+    res.status(200).json({
+      isFinished: estado === 'finalizada',
+      partidaId
+    });
+
+  } catch (error) {
+    console.error('Error en checkActivity:', error);
+    res.status(500).json({ message: 'Error al comprobar actividad' });
+  }
+};
+

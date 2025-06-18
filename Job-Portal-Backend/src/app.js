@@ -413,7 +413,7 @@ io.on('connection', (socket) => {
           .query(`
             SELECT Partida_ID_PK 
             FROM Partida_TB 
-            WHERE Profesor_ID_FK = @userId AND EstadoPartida = 'iniciada';
+            WHERE Profesor_ID_FK = @userId AND EstadoPartida IN ('iniciada', 'en proceso');
           `);
 
         if (partidaResult.recordset.length === 0) {
@@ -448,7 +448,7 @@ io.on('connection', (socket) => {
           .query(`
             SELECT EstadoPartida 
             FROM Partida_TB 
-            WHERE Partida_ID_PK = @partidaId AND EstadoPartida = 'iniciada';
+            WHERE Partida_ID_PK = @partidaId AND EstadoPartida IN ('iniciada', 'en proceso');
           `);
 
         if (partidaActiva.recordset.length === 0) {
@@ -493,6 +493,31 @@ io.on('connection', (socket) => {
     } catch (error) {
       console.error('Error al verificar la participación:', error);
       socket.emit('ErrorServidor', 'Hubo un problema al verificar tu participación.');
+    }
+  });
+
+  // Al final del io.on('connection', ...)
+  socket.on('finishGame', async (partidaId, callback) => {
+    try {
+      // 1. Actualizar el estado de la partida a 'finalizado'
+      await poolPromise.then(pool => 
+        pool.request()
+          .input('partidaId', sql.Int, partidaId)
+          .query(`
+            UPDATE Partida_TB
+            SET EstadoPartida = 'finalizada'
+            WHERE Partida_ID_PK = @partidaId;
+          `)
+      );
+
+      // 2. Notificar a todos (profesor y estudiantes)
+      io.to(`partida_${partidaId}`).emit('gameFinished', { partidaId });
+
+      // 3. Confirmar al emisor
+      callback({ success: true });
+    } catch (error) {
+      console.error('Error al finalizar la partida:', error);
+      callback({ error: error.message });
     }
   });
 
@@ -547,7 +572,7 @@ io.on('connection', (socket) => {
         .input('partidaId', sql.Int, partidaId)
         .query(`
           UPDATE Partida_TB
-          SET EstadoPartida = 'iniciada'
+          SET EstadoPartida = 'en proceso'
           WHERE Partida_ID_PK = @partidaId;
         `);
 
