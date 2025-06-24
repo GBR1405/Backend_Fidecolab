@@ -1422,8 +1422,12 @@ socket.on('initDrawingGame', ({ partidaId, equipoNumero }, callback) => {
   const gameId = `drawing-${partidaId}-${equipoNumero}`;
   const drawingState = drawingGames[gameId] || {};
 
-  // Unifica todas las acciones con su userId
-  const actions = Object.values(drawingState).flatMap(arr => arr);
+  const actions = [];
+    for (const [userId, userActions] of Object.entries(drawingState)) {
+      userActions.forEach(action => {
+        actions.push({ ...action, userId });
+      });
+    }
 
   socket.emit('drawingGameState', {
     actions,
@@ -1431,20 +1435,28 @@ socket.on('initDrawingGame', ({ partidaId, equipoNumero }, callback) => {
   });
 });
 
+socket.on('resetDrawingGame', ({ partidaId, equipoNumero }) => {
+  const gameId = `drawing-${partidaId}-${equipoNumero}`;
+  delete drawingGames[gameId]; // Limpiar completamente
+  io.to(`team-${partidaId}-${equipoNumero}`).emit('cleanPreviousGames');
+});
+
+
 socket.on('clearMyDrawing', ({ partidaId, equipoNumero, userId }) => {
   const gameId = `drawing-${partidaId}-${equipoNumero}`;
-  if (drawingGames[gameId]) {
+  if (drawingGames[gameId] && drawingGames[gameId][userId]) {
     delete drawingGames[gameId][userId];
   }
 
+  // Emitir a todos para que borren visualmente ese trazo
   io.to(`team-${partidaId}-${equipoNumero}`).emit('drawingCleared', { userId });
 });
 
 // Manejar acciones de dibujo
 socket.on('drawingAction', ({ partidaId, equipoNumero, userId, action }) => {
   const gameId = `drawing-${partidaId}-${equipoNumero}`;
-  const roomId = `team-${partidaId}-${equipoNumero}`;
 
+  // Inicializar si no existe
   if (!drawingGames[gameId]) {
     drawingGames[gameId] = {};
   }
@@ -1453,10 +1465,16 @@ socket.on('drawingAction', ({ partidaId, equipoNumero, userId, action }) => {
     drawingGames[gameId][userId] = [];
   }
 
+  // Agregar acción del usuario
   drawingGames[gameId][userId].push({ ...action, userId });
 
-  socket.to(roomId).emit('drawingAction', { ...action, userId });
+  // Emitir solo a otros usuarios del equipo
+  socket.to(`team-${partidaId}-${equipoNumero}`).emit('drawingAction', {
+    ...action,
+    userId
+  });
 });
+
 
 socket.on('getDrawingState', ({ partidaId, equipoNumero }, callback) => {
   const gameId = `drawing-${partidaId}-${equipoNumero}`;
