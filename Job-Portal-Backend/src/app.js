@@ -1423,17 +1423,23 @@ socket.on('initDrawingGame', ({ partidaId, equipoNumero }, callback) => {
   const drawingState = drawingGames[gameId] || {};
 
   const actions = [];
-    for (const [userId, userActions] of Object.entries(drawingState)) {
+
+  for (const [userId, userActions] of Object.entries(drawingState)) {
+    if (Array.isArray(userActions)) {
       userActions.forEach(action => {
         actions.push({ ...action, userId });
       });
+    } else {
+      console.warn(`⚠️ drawingGames[${gameId}][${userId}] no es un array:`, userActions);
     }
+  }
 
   socket.emit('drawingGameState', {
     actions,
     isInitial: true
   });
 });
+
 
 socket.on('resetDrawingGame', ({ partidaId, equipoNumero }) => {
   const gameId = `drawing-${partidaId}-${equipoNumero}`;
