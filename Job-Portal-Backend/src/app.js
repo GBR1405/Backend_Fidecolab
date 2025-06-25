@@ -1459,10 +1459,11 @@ socket.on('clearMyDrawing', ({ partidaId, equipoNumero, userId }) => {
 });
 
 // Manejar acciones de dibujo
+// En tu app.js, modifica el manejo de drawingAction:
+
 socket.on('drawingAction', ({ partidaId, equipoNumero, userId, action }) => {
   const gameId = `drawing-${partidaId}-${equipoNumero}`;
 
-  // Inicializar si no existe
   if (!drawingGames[gameId]) {
     drawingGames[gameId] = {};
   }
@@ -1471,14 +1472,19 @@ socket.on('drawingAction', ({ partidaId, equipoNumero, userId, action }) => {
     drawingGames[gameId][userId] = [];
   }
 
-  // Agregar acción del usuario
-  drawingGames[gameId][userId].push({ ...action, userId });
+  // Almacenar acción
+  drawingGames[gameId][userId].push(action);
 
-  // Emitir solo a otros usuarios del equipo
+  // Transmitir a otros usuarios del equipo
   socket.to(`team-${partidaId}-${equipoNumero}`).emit('drawingAction', {
     ...action,
     userId
   });
+
+  // Para acciones de limpieza, manejar especialmente
+  if (action.type === 'clear') {
+    socket.to(`team-${partidaId}-${equipoNumero}`).emit('drawingCleared', { userId });
+  }
 });
 
 
