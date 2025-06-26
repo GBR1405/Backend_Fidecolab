@@ -1429,16 +1429,16 @@ socket.on('initDrawingGame', ({ partidaId, equipoNumero }, callback) => {
       userActions.forEach(action => {
         actions.push({ ...action, userId });
       });
-    } else {
-      console.warn(`⚠️ drawingGames[${gameId}][${userId}] no es un array:`, userActions);
     }
   }
 
+  // Enviar al socket que lo pidió
   socket.emit('drawingGameState', {
     actions,
     isInitial: true
   });
 });
+
 
 
 socket.on('resetDrawingGame', ({ partidaId, equipoNumero }) => {
@@ -1468,7 +1468,7 @@ socket.on('drawingAction', ({ partidaId, equipoNumero, userId, action }) => {
     drawingGames[gameId] = {};
   }
 
-  if (!drawingGames[gameId][userId]) {
+  if (!Array.isArray(drawingGames[gameId][userId])) {
     drawingGames[gameId][userId] = [];
   }
 
@@ -1481,11 +1481,12 @@ socket.on('drawingAction', ({ partidaId, equipoNumero, userId, action }) => {
     userId
   });
 
-  // Para acciones de limpieza, manejar especialmente
+  // Si es de tipo clear, notificar
   if (action.type === 'clear') {
     socket.to(`team-${partidaId}-${equipoNumero}`).emit('drawingCleared', { userId });
   }
 });
+
 
 
 socket.on('getDrawingState', ({ partidaId, equipoNumero }, callback) => {
