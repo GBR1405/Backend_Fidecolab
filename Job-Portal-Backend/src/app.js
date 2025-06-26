@@ -129,6 +129,9 @@ const teamProgress = {};
 const gameProgress = {}; // {partidaId: {equipoNumero: {juegoType: progress}}}
 const gameResults = {}; // {partidaId: {ordenJuego: {equipoNumero: result}}}
 
+const drawingStates = {};
+const tintaStates = {};
+
 const PUZZLE_CONFIG = {
   'Fácil': { size: 3, pieceSize: 150 },
   'Normal': { size: 4, pieceSize: 120 },
@@ -1419,25 +1422,12 @@ socket.on('guessLetter', ({ partidaId, equipoNumero, letra }) => {
   
 // Inicializar juego de dibujo
 socket.on('initDrawingGame', ({ partidaId, equipoNumero }) => {
-  const gameId = `drawing-${partidaId}-${equipoNumero}`;
+  const roomId = `drawing-${partidaId}-${equipoNumero}`;
   
-  // Inicializar si no existe
-  if (!drawingGames[gameId]) {
-    drawingGames[gameId] = { actions: {} };
-  }
-  
-  // Recopilar todas las acciones existentes
-  const allActions = [];
-  for (const userId in drawingGames[gameId].actions) {
-    drawingGames[gameId].actions[userId].forEach(action => {
-      allActions.push({ ...action, userId });
-    });
-  }
-  
-  // Enviar estado inicial al cliente
-  socket.emit('drawingGameState', { 
-    actions: allActions,
-    isInitial: true 
+  // Enviar estado inicial
+  socket.emit('drawingGameState', {
+    actions: drawingStates[roomId] || [],
+    tintaState: tintaStates[roomId] || {}
   });
 });
 
@@ -1465,29 +1455,46 @@ socket.on('clearMyDrawing', ({ partidaId, equipoNumero, userId }) => {
 // En tu app.js, modifica el manejo de drawingAction:
 
 socket.on('drawingAction', ({ partidaId, equipoNumero, userId, action }) => {
-  const gameId = `drawing-${partidaId}-${equipoNumero}`;
+  const roomId = `drawing-${partidaId}-${equipoNumero}`;
   
-  // Asegurarse de que existe la estructura
-  if (!drawingGames[gameId]) {
-    drawingGames[gameId] = { actions: {} };
+  // Inicializar si no existe
+  if (!drawingStates[roomId]) drawingStates[roomId] = [];
+  if (!tintaStates[roomId]) tintaStates[roomId] = {};
+  
+  if (action.type === 'pathStart') {
+    drawingStates[roomId].push({
+      userId,
+      path: action.path
+    });
   }
-  if (!drawingGames[gameId].actions[userId]) {
-    drawingGames[gameId].actions[userId] = [];
+  else if (action.type === 'pathUpdate') {
+    const existing = drawingStates[roomId].find(
+      item => item.userId === userId && item.path.id === action.path.id
+    );
+    if (existing) {
+      existing.path.points = action.path.points;
+    }
+  }
+  else if (action.type === 'pathComplete') {
+    const existing = drawingStates[roomId].find(
+      item => item.userId === userId && item.path.id === action.path.id
+    );
+    if (existing) {
+      existing.path.points = action.path.points;
+    }
+  }
+  else if (action.type === 'clear') {
+    drawingStates[roomId] = drawingStates[roomId].filter(
+      item => item.userId !== userId
+    );
+    tintaStates[roomId][userId] = MAX_TINTA;
   }
   
-  // Guardar la acción
-  drawingGames[gameId].actions[userId].push(action);
-  
-  // Transmitir a todos los miembros del equipo (incluyendo al remitente para sincronización)
-  io.to(`team-${partidaId}-${equipoNumero}`).emit('drawingAction', {
+  // Transmitir a todos en la sala (excepto al remitente)
+  socket.to(roomId).emit('drawingAction', {
     ...action,
     userId
   });
-  
-  // Manejar limpieza específica
-  if (action.type === 'clear') {
-    io.to(`team-${partidaId}-${equipoNumero}`).emit('drawingCleared', { userId });
-  }
 });
 
 // Limpiar dibujos de un usuario
