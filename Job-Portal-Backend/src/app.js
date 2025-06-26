@@ -1418,7 +1418,7 @@ socket.on('guessLetter', ({ partidaId, equipoNumero, letra }) => {
 
   
 // Inicializar juego de dibujo
-socket.on('initDrawingGame', ({ partidaId, equipoNumero }, callback) => {
+socket.on('initDrawingGame', ({ partidaId, equipoNumero }) => {
   const gameId = `drawing-${partidaId}-${equipoNumero}`;
   const drawingState = drawingGames[gameId] || {};
 
@@ -1432,12 +1432,13 @@ socket.on('initDrawingGame', ({ partidaId, equipoNumero }, callback) => {
     }
   }
 
-  // Enviar al socket que lo pidió
+  // Emitir al cliente solicitante
   socket.emit('drawingGameState', {
     actions,
     isInitial: true
   });
 });
+
 
 
 
@@ -1472,16 +1473,16 @@ socket.on('drawingAction', ({ partidaId, equipoNumero, userId, action }) => {
     drawingGames[gameId][userId] = [];
   }
 
-  // Almacenar acción
+  // Guardar acción
   drawingGames[gameId][userId].push(action);
 
-  // Transmitir a otros usuarios del equipo
+  // Emitir a los demás del equipo
   socket.to(`team-${partidaId}-${equipoNumero}`).emit('drawingAction', {
     ...action,
     userId
   });
 
-  // Si es de tipo clear, notificar
+  // Si es limpieza, avisar
   if (action.type === 'clear') {
     socket.to(`team-${partidaId}-${equipoNumero}`).emit('drawingCleared', { userId });
   }
