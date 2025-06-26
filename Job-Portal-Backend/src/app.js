@@ -1422,22 +1422,37 @@ socket.on('guessLetter', ({ partidaId, equipoNumero, letra }) => {
   
 // Inicializar juego de dibujo
 socket.on('initDrawingGame', ({ partidaId, equipoNumero }) => {
-  const roomId = `drawing-${partidaId}-${equipoNumero}`;
+  const gameId = `drawing-${partidaId}-${equipoNumero}`;
   
-  // Enviar estado inicial
-  socket.emit('drawingGameState', {
-    actions: drawingStates[roomId] || [],
-    tintaState: tintaStates[roomId] || {}
+  // Inicializar si no existe
+  if (!drawingGames[gameId]) {
+    drawingGames[gameId] = {
+      actions: {},
+      tintaStates: {}
+    };
+  }
+  
+  // Recopilar todas las acciones existentes
+  const allActions = [];
+  for (const userId in drawingGames[gameId].actions) {
+    drawingGames[gameId].actions[userId].forEach(action => {
+      allActions.push({ userId, path: action });
+    });
+  }
+  
+  // Enviar estado inicial al cliente
+  socket.emit('drawingGameState', { 
+    actions: allActions,
+    tintaState: drawingGames[gameId].tintaStates
   });
 });
 
 
 
-
 socket.on('resetDrawingGame', ({ partidaId, equipoNumero }) => {
   const gameId = `drawing-${partidaId}-${equipoNumero}`;
-  delete drawingGames[gameId]; // Limpiar completamente
-  io.to(`team-${partidaId}-${equipoNumero}`).emit('cleanPreviousGames');
+  delete drawingGames[gameId];
+  io.to(`team-${partidaId}-${equipoNumero}`).emit('drawingCleared', { all: true });
 });
 
 
@@ -1455,43 +1470,49 @@ socket.on('clearMyDrawing', ({ partidaId, equipoNumero, userId }) => {
 // En tu app.js, modifica el manejo de drawingAction:
 
 socket.on('drawingAction', ({ partidaId, equipoNumero, userId, action }) => {
-  const roomId = `drawing-${partidaId}-${equipoNumero}`;
+  const gameId = `drawing-${partidaId}-${equipoNumero}`;
   
   // Inicializar si no existe
-  if (!drawingStates[roomId]) drawingStates[roomId] = [];
-  if (!tintaStates[roomId]) tintaStates[roomId] = {};
+  if (!drawingGames[gameId]) {
+    drawingGames[gameId] = {
+      actions: {},
+      tintaStates: {}
+    };
+  }
+  if (!drawingGames[gameId].actions[userId]) {
+    drawingGames[gameId].actions[userId] = [];
+  }
   
+  // Manejar diferentes tipos de acciones
   if (action.type === 'pathStart') {
-    drawingStates[roomId].push({
-      userId,
-      path: action.path
-    });
+    drawingGames[gameId].actions[userId].push(action.path);
   }
   else if (action.type === 'pathUpdate') {
-    const existing = drawingStates[roomId].find(
-      item => item.userId === userId && item.path.id === action.path.id
-    );
-    if (existing) {
-      existing.path.points = action.path.points;
+    const userActions = drawingGames[gameId].actions[userId];
+    const lastAction = userActions[userActions.length - 1];
+    if (lastAction && lastAction.id === action.path.id) {
+      lastAction.points = action.path.points;
     }
   }
   else if (action.type === 'pathComplete') {
-    const existing = drawingStates[roomId].find(
-      item => item.userId === userId && item.path.id === action.path.id
-    );
-    if (existing) {
-      existing.path.points = action.path.points;
+    const userActions = drawingGames[gameId].actions[userId];
+    const lastAction = userActions[userActions.length - 1];
+    if (lastAction && lastAction.id === action.path.id) {
+      lastAction.points = action.path.points;
     }
   }
   else if (action.type === 'clear') {
-    drawingStates[roomId] = drawingStates[roomId].filter(
-      item => item.userId !== userId
-    );
-    tintaStates[roomId][userId] = MAX_TINTA;
+    // Limpiar acciones del usuario
+    drawingGames[gameId].actions[userId] = [];
+    
+    // Actualizar estado de tinta si se proporciona
+    if (action.tinta !== undefined) {
+      drawingGames[gameId].tintaStates[userId] = action.tinta;
+    }
   }
   
-  // Transmitir a todos en la sala (excepto al remitente)
-  socket.to(roomId).emit('drawingAction', {
+  // Transmitir a todos en la sala (incluyendo al remitente para sincronización)
+  io.to(`team-${partidaId}-${equipoNumero}`).emit('drawingAction', {
     ...action,
     userId
   });
