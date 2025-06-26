@@ -1420,22 +1420,24 @@ socket.on('guessLetter', ({ partidaId, equipoNumero, letra }) => {
 // Inicializar juego de dibujo
 socket.on('initDrawingGame', ({ partidaId, equipoNumero }) => {
   const gameId = `drawing-${partidaId}-${equipoNumero}`;
-  const drawingState = drawingGames[gameId] || {};
-
-  const actions = [];
-
-  for (const [userId, userActions] of Object.entries(drawingState)) {
-    if (Array.isArray(userActions)) {
-      userActions.forEach(action => {
-        actions.push({ ...action, userId });
-      });
-    }
+  
+  // Inicializar si no existe
+  if (!drawingGames[gameId]) {
+    drawingGames[gameId] = { actions: {} };
   }
-
-  // Emitir al cliente solicitante
-  socket.emit('drawingGameState', {
-    actions,
-    isInitial: true
+  
+  // Recopilar todas las acciones existentes
+  const allActions = [];
+  for (const userId in drawingGames[gameId].actions) {
+    drawingGames[gameId].actions[userId].forEach(action => {
+      allActions.push({ ...action, userId });
+    });
+  }
+  
+  // Enviar estado inicial al cliente
+  socket.emit('drawingGameState', { 
+    actions: allActions,
+    isInitial: true 
   });
 });
 
@@ -1464,28 +1466,40 @@ socket.on('clearMyDrawing', ({ partidaId, equipoNumero, userId }) => {
 
 socket.on('drawingAction', ({ partidaId, equipoNumero, userId, action }) => {
   const gameId = `drawing-${partidaId}-${equipoNumero}`;
-
+  
+  // Asegurarse de que existe la estructura
   if (!drawingGames[gameId]) {
-    drawingGames[gameId] = {};
+    drawingGames[gameId] = { actions: {} };
   }
-
-  if (!Array.isArray(drawingGames[gameId][userId])) {
-    drawingGames[gameId][userId] = [];
+  if (!drawingGames[gameId].actions[userId]) {
+    drawingGames[gameId].actions[userId] = [];
   }
-
-  // Guardar acción
-  drawingGames[gameId][userId].push(action);
-
-  // Emitir a los demás del equipo
-  socket.to(`team-${partidaId}-${equipoNumero}`).emit('drawingAction', {
+  
+  // Guardar la acción
+  drawingGames[gameId].actions[userId].push(action);
+  
+  // Transmitir a todos los miembros del equipo (incluyendo al remitente para sincronización)
+  io.to(`team-${partidaId}-${equipoNumero}`).emit('drawingAction', {
     ...action,
     userId
   });
-
-  // Si es limpieza, avisar
+  
+  // Manejar limpieza específica
   if (action.type === 'clear') {
-    socket.to(`team-${partidaId}-${equipoNumero}`).emit('drawingCleared', { userId });
+    io.to(`team-${partidaId}-${equipoNumero}`).emit('drawingCleared', { userId });
   }
+});
+
+// Limpiar dibujos de un usuario
+socket.on('clearMyDrawing', ({ partidaId, equipoNumero, userId }) => {
+  const gameId = `drawing-${partidaId}-${equipoNumero}`;
+  
+  if (drawingGames[gameId]?.actions[userId]) {
+    delete drawingGames[gameId].actions[userId];
+  }
+  
+  // Notificar a todos los miembros del equipo
+  io.to(`team-${partidaId}-${equipoNumero}`).emit('drawingCleared', { userId });
 });
 
 
@@ -1501,15 +1515,15 @@ socket.on('getDrawingState', ({ partidaId, equipoNumero }, callback) => {
 
 // Guardar imagen final del dibujo
 socket.on('saveDrawing', ({ partidaId, equipoNumero, imageData }) => {
-  const gameKey = `drawing-${partidaId}-${equipoNumero}`;
+  const gameId = `drawing-${partidaId}-${equipoNumero}`;
   
-  // Guardar en drawingGames
-  if (!drawingGames[gameKey]) {
-    drawingGames[gameKey] = { canvasState: [], imageData: null };
+  if (!drawingGames[gameId]) {
+    drawingGames[gameId] = { actions: {}, imageData: null };
   }
-  drawingGames[gameKey].imageData = imageData;
-
-  // Actualizar en demostración activa si existe
+  
+  drawingGames[gameId].imageData = imageData;
+  
+  // Actualizar demostración si está activa
   if (drawingDemonstrations[partidaId]) {
     drawingDemonstrations[partidaId].drawings[equipoNumero] = imageData;
     io.to(`partida_${partidaId}`).emit('drawingUpdated', { equipoNumero });
