@@ -1431,13 +1431,13 @@ socket.on('initDrawingGame', ({ partidaId, equipoNumero, userId }) => {
     };
   }
 
-  // Enviar estado inicial mejorado
+  // Enviar todos los trazos combinados por usuario
   const allActions = Object.entries(drawingGames[gameId].actions)
-    .flatMap(([userId, actions]) => 
-      actions.map(action => ({ userId, path: action }))
+    .flatMap(([uid, paths]) => 
+      paths.map(path => ({ userId: uid, path }))
     );
 
-  socket.emit('drawingGameState', { 
+  socket.emit('drawingGameState', {
     actions: allActions,
     tintaState: drawingGames[gameId].tintaStates
   });
@@ -1470,29 +1470,39 @@ socket.on('drawingAction', ({ partidaId, equipoNumero, userId, action }) => {
   const gameId = `drawing-${partidaId}-${equipoNumero}`;
 
   if (!drawingGames[gameId]) {
-    drawingGames[gameId] = { actions: {}, tintaStates: {} };
+    drawingGames[gameId] = {
+      actions: {},
+      tintaStates: {}
+    };
   }
 
-  if (!drawingGames[gameId].actions[userId]) {
-    drawingGames[gameId].actions[userId] = [];
+  const userActions = drawingGames[gameId].actions[userId] || [];
+
+  // Guardar acciones por tipo
+  switch (action.type) {
+    case 'pathStart':
+      drawingGames[gameId].actions[userId] = [...userActions, action.path];
+      break;
+
+    case 'pathUpdate':
+    case 'pathComplete':
+      const index = userActions.findIndex(p => p.id === action.path?.id);
+      if (index !== -1) {
+        const updated = [...userActions];
+        updated[index] = action.path;
+        drawingGames[gameId].actions[userId] = updated;
+      }
+      break;
+
+    case 'clear':
+      delete drawingGames[gameId].actions[userId];
+      if (action.permanent) {
+        drawingGames[gameId].tintaStates[userId] = action.tinta || 5000;
+      }
+      break;
   }
 
-  // Guardar la acción según el tipo
-  if (action.type === 'pathStart') {
-    drawingGames[gameId].actions[userId].push(action.path);
-  } else if (action.type === 'pathUpdate' || action.type === 'pathComplete') {
-    const index = drawingGames[gameId].actions[userId].findIndex(p => p.id === action.path?.id);
-    if (index !== -1) {
-      drawingGames[gameId].actions[userId][index] = action.path;
-    }
-  } else if (action.type === 'clear') {
-    delete drawingGames[gameId].actions[userId];
-    if (action.permanent) {
-      drawingGames[gameId].tintaStates[userId] = action.tinta;
-    }
-  }
-
-  // Enviar al equipo (excepto al emisor)
+  // Enviar la acción a los demás en la sala
   socket.to(`team-${partidaId}-${equipoNumero}`).emit('drawingAction', {
     userId,
     ...action
