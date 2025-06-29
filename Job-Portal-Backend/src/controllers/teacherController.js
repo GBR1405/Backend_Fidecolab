@@ -342,7 +342,7 @@ export const startSimulation = async (req, res) => {
                 SELECT Partida_ID_PK, FechaInicio 
                     FROM Partida_TB 
                     WHERE Profesor_ID_FK = @userId 
-                    AND EstadoPartida IN ('iniciada', 'proceso');
+                    AND EstadoPartida IN ('iniciada', 'en proceso');
             `);
 
         if (partidaIniciada.recordset.length > 0) {
@@ -472,7 +472,7 @@ export const cancelarPartida = async (req, res) => {
             .query(`
                 SELECT Partida_ID_PK 
                 FROM Partida_TB 
-                WHERE Profesor_ID_FK = @userId AND EstadoPartida = 'iniciada'
+                WHERE Profesor_ID_FK = @userId AND EstadoPartida IN ('iniciada', 'en proceso');
             `);
 
         if (partidaIniciada.recordset.length > 0) {

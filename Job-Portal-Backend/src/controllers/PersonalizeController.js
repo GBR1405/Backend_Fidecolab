@@ -331,8 +331,17 @@ export const deletePersonalization = async (req, res) => {
         message: "La personalización está en uso. Se ha marcado como inactiva (Estado 2) en lugar de borrarla." 
       });
     } else {
-      // Si no está siendo usada, borrar completamente
-      var deletePersonalizationQuery = `
+      // Primero eliminar todas las configuraciones relacionadas con la personalización
+      const deleteConfigsQuery = `
+        DELETE FROM ConfiguracionJuego_TB
+        WHERE Personalizacion_ID_PK = @personalizationId
+      `;
+      await pool.request()
+        .input("personalizationId", sql.Int, personalizationId)
+        .query(deleteConfigsQuery);
+
+      // Luego eliminar la personalización
+      const deletePersonalizationQuery = `
         DELETE FROM Personalizacion_TB
         WHERE Personalizacion_ID_PK = @personalizationId
       `;
