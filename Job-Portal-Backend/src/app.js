@@ -1446,7 +1446,9 @@ socket.on('initDrawingGame', ({ partidaId, equipoNumero, userId }) => {
   });
 });
 
-
+socket.on('joinDrawingTeam', ({ partidaId, equipoNumero }) => {
+  socket.join(`team-${partidaId}-${equipoNumero}`);
+});
 
 
 socket.on('resetDrawingGame', ({ partidaId, equipoNumero }) => {
@@ -1479,34 +1481,42 @@ socket.on('drawingAction', ({ partidaId, equipoNumero, userId, action }) => {
     };
   }
 
-  const userActions = drawingGames[gameId].actions[userId] || [];
+  if (!drawingGames[gameId].actions[userId]) {
+    drawingGames[gameId].actions[userId] = [];
+  }
 
-  // Guardar acciones por tipo
   switch (action.type) {
     case 'pathStart':
-      drawingGames[gameId].actions[userId] = [...userActions, action.path];
+      drawingGames[gameId].actions[userId].push(action.path);
       break;
 
     case 'pathUpdate':
     case 'pathComplete':
-      const index = userActions.findIndex(p => p.id === action.path?.id);
-      if (index !== -1) {
-        const updated = [...userActions];
-        updated[index] = action.path;
-        drawingGames[gameId].actions[userId] = updated;
+      const userActions = drawingGames[gameId].actions[userId];
+      const existingActionIndex = userActions.findIndex(a => a.id === action.path.id);
+
+      if (existingActionIndex >= 0) {
+        userActions[existingActionIndex] = action.path;
+      } else {
+        userActions.push(action.path);
       }
       break;
 
     case 'clear':
       delete drawingGames[gameId].actions[userId];
-      if (action.permanent) {
-        drawingGames[gameId].tintaStates[userId] = action.tinta || 5000;
-      }
-      break;
+      drawingGames[gameId].tintaStates[userId] = 5000;
+
+      // Notificar a todos que se borró
+      io.to(`team-${partidaId}-${equipoNumero}`).emit('drawingAction', {
+        type: 'clear',
+        userId,
+        tinta: 5000
+      });
+      return; // ⚠️ Evita doble emisión
   }
 
-  // Enviar la acción a los demás en la sala
-  socket.to(`team-${partidaId}-${equipoNumero}`).emit('drawingAction', {
+  // ✅ Esta es la forma correcta
+  io.to(`team-${partidaId}-${equipoNumero}`).emit('drawingAction', {
     userId,
     ...action
   });
