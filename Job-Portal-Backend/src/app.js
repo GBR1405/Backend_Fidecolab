@@ -1419,12 +1419,14 @@ socket.on('guessLetter', ({ partidaId, equipoNumero, letra }) => {
   }
 });
 
+//Si ves esto esta en el estado que sirve
+//Si ves esto el codigo sigue en el estado de prueba
   
 // Inicializar juego de dibujo
 socket.on('initDrawingGame', ({ partidaId, equipoNumero, userId }) => {
   const gameId = `drawing-${partidaId}-${equipoNumero}`;
 
-  // 👉 Unir al socket a la sala de su equipo
+  // Unir al socket a la sala de su equipo
   socket.join(`team-${partidaId}-${equipoNumero}`);
 
   if (!drawingGames[gameId]) {
@@ -1434,7 +1436,12 @@ socket.on('initDrawingGame', ({ partidaId, equipoNumero, userId }) => {
     };
   }
 
-  // Enviar trazos existentes
+  // Inicializar tinta si no existe
+  if (drawingGames[gameId].tintaStates[userId] === undefined) {
+    drawingGames[gameId].tintaStates[userId] = 5000; // Valor inicial
+  }
+
+  // Enviar trazos existentes y estado de tinta
   const allActions = Object.entries(drawingGames[gameId].actions)
     .flatMap(([userId, actions]) =>
       actions.map(action => ({ userId, path: action }))
@@ -1446,8 +1453,25 @@ socket.on('initDrawingGame', ({ partidaId, equipoNumero, userId }) => {
   });
 });
 
-socket.on('joinDrawingTeam', ({ partidaId, equipoNumero }) => {
-  socket.join(`team-${partidaId}-${equipoNumero}`);
+socket.on('updateTintaState', ({ partidaId, equipoNumero, userId, tinta }) => {
+  const gameId = `drawing-${partidaId}-${equipoNumero}`;
+  
+  if (!drawingGames[gameId]) {
+    drawingGames[gameId] = {
+      actions: {},
+      tintaStates: {}
+    };
+  }
+  
+  // Actualizar estado de tinta
+  drawingGames[gameId].tintaStates[userId] = tinta;
+  
+  // Notificar a otros miembros del equipo (opcional)
+  socket.to(`team-${partidaId}-${equipoNumero}`).emit('drawingAction', {
+    type: 'tintaUpdate',
+    userId,
+    tinta
+  });
 });
 
 
@@ -1460,14 +1484,29 @@ socket.on('resetDrawingGame', ({ partidaId, equipoNumero }) => {
 
 socket.on('clearMyDrawing', ({ partidaId, equipoNumero, userId }) => {
   const gameId = `drawing-${partidaId}-${equipoNumero}`;
-  if (drawingGames[gameId] && drawingGames[gameId][userId]) {
-    delete drawingGames[gameId][userId];
+  
+  if (drawingGames[gameId]?.actions?.[userId]) {
+    delete drawingGames[gameId].actions[userId];
   }
 
-  // Emitir a todos para que borren visualmente ese trazo
-  io.to(`team-${partidaId}-${equipoNumero}`).emit('drawingCleared', { userId });
-});
+  // Restablecer tinta a máximo
+  if (drawingGames[gameId]?.tintaStates) {
+    drawingGames[gameId].tintaStates[userId] = 5000;
+    
+    // Notificar al cliente que borró
+    socket.emit('drawingAction', {
+      type: 'tintaUpdate',
+      userId,
+      tinta: 5000
+    });
+  }
 
+  // Emitir borrado a todos menos el que borra
+  socket.to(`team-${partidaId}-${equipoNumero}`).emit('drawingAction', {
+    type: 'clear',
+    userId
+  });
+});
 // Manejar acciones de dibujo
 // En tu app.js, modifica el manejo de drawingAction:
 
