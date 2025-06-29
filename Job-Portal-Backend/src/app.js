@@ -1424,6 +1424,9 @@ socket.on('guessLetter', ({ partidaId, equipoNumero, letra }) => {
 socket.on('initDrawingGame', ({ partidaId, equipoNumero, userId }) => {
   const gameId = `drawing-${partidaId}-${equipoNumero}`;
 
+  // 👉 Unir al socket a la sala de su equipo
+  socket.join(`team-${partidaId}-${equipoNumero}`);
+
   if (!drawingGames[gameId]) {
     drawingGames[gameId] = {
       actions: {},
@@ -1431,10 +1434,10 @@ socket.on('initDrawingGame', ({ partidaId, equipoNumero, userId }) => {
     };
   }
 
-  // Enviar todos los trazos combinados por usuario
+  // Enviar trazos existentes
   const allActions = Object.entries(drawingGames[gameId].actions)
-    .flatMap(([uid, paths]) => 
-      paths.map(path => ({ userId: uid, path }))
+    .flatMap(([userId, actions]) =>
+      actions.map(action => ({ userId, path: action }))
     );
 
   socket.emit('drawingGameState', {
