@@ -1498,10 +1498,15 @@ socket.on('drawingAction', ({ partidaId, equipoNumero, userId, action }) => {
       break;
       
     case 'clear':
-      drawingGames[gameId].actions[userId] = [];
-      if (action.tinta !== undefined) {
-        drawingGames[gameId].tintaStates[userId] = action.tinta;
-      }
+      delete drawingGames[gameId].actions[userId];
+      drawingGames[gameId].tintaStates[userId] = MAX_TINTA;
+      
+      // Notificar a todos
+      io.to(`team-${partidaId}-${equipoNumero}`).emit('drawingAction', {
+        type: 'clear',
+        userId,
+        tinta: MAX_TINTA
+      });
       break;
   }
   
@@ -1511,6 +1516,22 @@ socket.on('drawingAction', ({ partidaId, equipoNumero, userId, action }) => {
     userId
   });
 });
+
+socket.on('requestDrawingSync', ({ partidaId, equipoNumero }) => {
+  const gameId = `drawing-${partidaId}-${equipoNumero}`;
+  if (drawingGames[gameId]) {
+    const allActions = Object.entries(drawingGames[gameId].actions)
+      .flatMap(([userId, actions]) =>
+        actions.map(action => ({ userId, path: action }))
+      );
+
+    socket.emit('drawingSyncResponse', {
+      actions: allActions,
+      tintaState: drawingGames[gameId].tintaStates
+    });
+  }
+});
+
 
 // Limpiar dibujos de un usuario
 socket.on('clearMyDrawing', ({ partidaId, equipoNumero, userId }) => {

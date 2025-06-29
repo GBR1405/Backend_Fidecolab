@@ -340,8 +340,9 @@ export const startSimulation = async (req, res) => {
             .input('userId', sql.Int, userId)
             .query(`
                 SELECT Partida_ID_PK, FechaInicio 
-                FROM Partida_TB 
-                WHERE Profesor_ID_FK = @userId AND EstadoPartida = 'iniciada'
+                    FROM Partida_TB 
+                    WHERE Profesor_ID_FK = @userId 
+                    AND EstadoPartida IN ('iniciada', 'proceso');
             `);
 
         if (partidaIniciada.recordset.length > 0) {
