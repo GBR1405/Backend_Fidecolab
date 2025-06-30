@@ -381,7 +381,6 @@ function startGameTimer(partidaId, gameType, difficulty = null) {
 
 // Lógica de Socket.IO
 io.on('connection', (socket) => {
-  console.log('Un cliente se ha conectado:', socket.id);
 
   // Unirse a una sala
   socket.on('JoinRoom', async (roomId, user) => {
@@ -637,7 +636,6 @@ io.on('connection', (socket) => {
 
   // Salir de una sala
   socket.on('disconnect', () => {
-    console.log('Un cliente se ha desconectado:', socket.id);
   
     // Buscar y eliminar al usuario de todas las salas
     for (const roomId in salas) {
@@ -874,7 +872,6 @@ io.on('connection', (socket) => {
 
   // Desconexión
   socket.on('disconnect', () => {
-    console.log('Un cliente se ha desconectado:', socket.id);
   });
 
 
