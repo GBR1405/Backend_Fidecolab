@@ -562,13 +562,70 @@ io.on('connection', (socket) => {
         `)
     );
 
-    // 5. Notificar a todos
+    // 5. Agrupar resultados por equipo
+    function agruparResultadosPorEquipo(resultadosArray) {
+      const porEquipo = {};
+      for (const resultado of resultadosArray) {
+        const equipo = resultado.equipoNumero;
+        if (!porEquipo[equipo]) {
+          porEquipo[equipo] = {
+            partidaId: resultado.partidaId,
+            equipo,
+            juegos: []
+          };
+        }
+        porEquipo[equipo].juegos.push({
+          juegoNumero: resultado.juegoNumero,
+          tipoJuego: resultado.tipoJuego,
+          tiempo: resultado.tiempo,
+          progreso: resultado.progreso,
+          tema: resultado.tema,
+          comentario: resultado.comentario
+        });
+      }
+      return Object.values(porEquipo);
+    }
+
+    const resultadosFinales = gameResults[partidaId];
+    const resultadosPorEquipo = agruparResultadosPorEquipo(resultadosFinales);
+
+    const pool = await poolPromise;
+    for (const equipo of resultadosPorEquipo) {
+      const jsonResultados = JSON.stringify(equipo.juegos);
+
+      await pool.request()
+        .input('Equipo', sql.Int, equipo.equipo)
+        .input('Partida_ID_FK', sql.Int, equipo.partidaId)
+        .input('Resultados', sql.NVarChar(sql.MAX), jsonResultados)
+        .input('Comentario', sql.VarChar(200), '')
+        .query(`
+          INSERT INTO Resultados_TB (Equipo, Partida_ID_FK, Resultados, Comentario)
+          VALUES (@Equipo, @Partida_ID_FK, @Resultados, @Comentario)
+        `);
+    }
+
+    console.log(`[BD] Resultados insertados para ${resultadosPorEquipo.length} equipos`);
+
+    // 6. Limpiar toda la información en memoria
+    delete gameResults[partidaId];
+    delete gameTeamTimestamps[partidaId];
+    delete global.partidasConfig[partidaId];
+
+    ['hangmanGames', 'drawingGames', 'memoryGames', 'puzzleGames'].forEach(store => {
+      Object.keys(global[store] || {}).forEach(key => {
+        if (key.includes(`${partidaId}`)) {
+          delete global[store][key];
+        }
+      });
+    });
+
+    // 7. Notificar a todos
     io.to(`partida_${partidaId}`).emit('gameFinished', { partidaId });
 
-    // 6. Confirmar al emisor
+    // 8. Confirmar al emisor
     callback({ success: true });
 
-    // 7. Ver resultados en consola
+    // 9. Ver resultados en consola
     console.log("[RESULTADOS FINALES]");
     console.table(gameResults[partidaId]);
 
@@ -1167,7 +1224,6 @@ socket.on('initMemoryGame', async ({ partidaId, equipoNumero }) => {
     });
 
   } catch (error) {
-    console.error('Error inicializando juego de memoria:', error);
     socket.emit('memoryGameError', { message: error.message });
   }
 });

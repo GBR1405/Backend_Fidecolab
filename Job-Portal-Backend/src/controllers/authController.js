@@ -171,7 +171,7 @@ export const forgotPassword = async (req, res) => {
     const token = jwt.sign({ id: user.Usuario_ID_PK }, process.env.JWT_SECRET, { expiresIn: "15m" });
 
     // Construir el enlace de recuperación
-    const resetLink = `http://localhost:3001/reset-password?token=${token}`;
+    const resetLink = `https://frontend-fidecolab.vercel.app/reset-password?token=${token}`;
 
     // Enviar el correo
     await transporter.sendMail({
