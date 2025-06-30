@@ -503,28 +503,80 @@ io.on('connection', (socket) => {
 
   // Al final del io.on('connection', ...)
   socket.on('finishGame', async (partidaId, callback) => {
-    try {
-      // 1. Actualizar el estado de la partida a 'finalizado'
-      await poolPromise.then(pool => 
-        pool.request()
-          .input('partidaId', sql.Int, partidaId)
-          .query(`
-            UPDATE Partida_TB
-            SET EstadoPartida = 'finalizada'
-            WHERE Partida_ID_PK = @partidaId;
-          `)
-      );
-
-      // 2. Notificar a todos (profesor y estudiantes)
-      io.to(`partida_${partidaId}`).emit('gameFinished', { partidaId });
-
-      // 3. Confirmar al emisor
-      callback({ success: true });
-    } catch (error) {
-      console.error('Error al finalizar la partida:', error);
-      callback({ error: error.message });
+  try {
+    const config = global.partidasConfig[partidaId];
+    if (!config) {
+      return callback({ error: "Partida no encontrada" });
     }
-  });
+
+    // 1. Guardar el último juego jugado
+    await generarResultadosJuegoActual(partidaId);
+
+    const juegos = config.juegos;
+    const currentIndex = config.currentIndex;
+
+    // 2. Detectar si la partida se terminó anticipadamente
+    const finalizacionAnticipada = currentIndex < juegos.length - 1;
+
+    // 3. Si se finalizó antes de completar todos los juegos, marcar los juegos cancelados
+    if (finalizacionAnticipada) {
+      const pool = await poolPromise;
+      const equiposQuery = await pool.request()
+        .input('partidaId', sql.Int, partidaId)
+        .query(`
+          SELECT DISTINCT Equipo_Numero FROM Participantes_TB 
+          WHERE Partida_ID_FK = @partidaId
+        `);
+  
+      const totalEquipos = equiposQuery.recordset.map(row => row.Equipo_Numero);
+
+      for (let i = currentIndex + 1; i < juegos.length; i++) {
+        const juego = juegos[i];
+        for (const equipoNumero of totalEquipos) {
+          gameResults[partidaId].push({
+            partidaId,
+            equipoNumero,
+            juegoNumero: juego.Orden,
+            tipoJuego: juego.tipo,
+            tiempo: "N/A",
+            progreso: "N/A",
+            tema: juego.tema || "N/A",
+            comentario: "Juego Cancelado"
+          });
+        }
+      }
+
+      console.log(`[INFO] Partida ${partidaId} finalizada anticipadamente.`);
+    } else {
+      console.log(`[INFO] Partida ${partidaId} finalizada normalmente.`);
+    }
+
+    // 4. Marcar la partida como finalizada
+    await poolPromise.then(pool => 
+      pool.request()
+        .input('partidaId', sql.Int, partidaId)
+        .query(`
+          UPDATE Partida_TB
+          SET EstadoPartida = 'finalizada'
+          WHERE Partida_ID_PK = @partidaId;
+        `)
+    );
+
+    // 5. Notificar a todos
+    io.to(`partida_${partidaId}`).emit('gameFinished', { partidaId });
+
+    // 6. Confirmar al emisor
+    callback({ success: true });
+
+    // 7. Ver resultados en consola
+    console.log("[RESULTADOS FINALES]");
+    console.table(gameResults[partidaId]);
+
+  } catch (error) {
+    console.error('Error al finalizar la partida:', error);
+    callback({ error: error.message });
+  }
+});
 
   // Salir de una sala
   socket.on('disconnect', () => {
@@ -1354,6 +1406,14 @@ socket.on('initHangmanGame', ({ partidaId, equipoNumero }) => {
       }
     };
 
+    if (!gameTeamTimestamps[partidaId]) gameTeamTimestamps[partidaId] = {};
+    if (!gameTeamTimestamps[partidaId][equipoNumero]) {
+      gameTeamTimestamps[partidaId][equipoNumero] = {
+        startedAt: new Date(),
+        completedAt: null
+      };
+    }
+
     // Enviar estado inicial
     io.to(`team-${partidaId}-${equipoNumero}`).emit('hangmanGameState', hangmanGames[gameId]);
 
@@ -1408,6 +1468,10 @@ socket.on('guessLetter', ({ partidaId, equipoNumero, letra }) => {
       if (palabraUnica.every(l => game.state.letrasAdivinadas.includes(l))) {
         game.state.juegoTerminado = true;
         game.state.ganado = true;
+
+        if (!gameTeamTimestamps[partidaId]?.[equipoNumero]?.completedAt) {
+          gameTeamTimestamps[partidaId][equipoNumero].completedAt = new Date();
+        }
       }
     } else {
       game.state.intentosRestantes--;
@@ -1416,6 +1480,11 @@ socket.on('guessLetter', ({ partidaId, equipoNumero, letra }) => {
       if (game.state.intentosRestantes <= 0) {
         game.state.juegoTerminado = true;
         game.state.ganado = false;
+
+        if (!gameTeamTimestamps[partidaId]?.[equipoNumero]?.completedAt) {
+          gameTeamTimestamps[partidaId][equipoNumero].completedAt = new Date();
+        }
+
       }
     }
 
@@ -1450,6 +1519,14 @@ socket.on('initDrawingGame', ({ partidaId, equipoNumero, userId }) => {
     drawingGames[gameId] = {
       actions: {},
       tintaStates: {}
+    };
+  }
+
+  if (!gameTeamTimestamps[partidaId]) gameTeamTimestamps[partidaId] = {};
+  if (!gameTeamTimestamps[partidaId][equipoNumero]) {
+    gameTeamTimestamps[partidaId][equipoNumero] = {
+      startedAt: new Date(),
+      completedAt: null
     };
   }
 
@@ -1926,6 +2003,14 @@ socket.on('initPuzzleGame', ({ partidaId, equipoNumero, difficulty, imageUrl }) 
     return;
   }
 
+  if (!gameTeamTimestamps[partidaId]) gameTeamTimestamps[partidaId] = {};
+    if (!gameTeamTimestamps[partidaId][equipoNumero]) {
+      gameTeamTimestamps[partidaId][equipoNumero] = {
+        startedAt: new Date(),
+        completedAt: null
+      };
+    }
+
   // Generar piezas revueltas con semilla
   const seed = `${partidaId}-${equipoNumero}`;
   const pieces = generatePuzzlePieces(size, imageUrl, seed);
@@ -1976,6 +2061,11 @@ socket.on('selectPuzzlePiece', ({ partidaId, equipoNumero, pieceId, userId }) =>
 
       // Calcular progreso
       game.state.progress = calculatePuzzleProgress(game.state.pieces);
+
+      if (game.state.progress === 100 && !gameTeamTimestamps[partidaId]?.[equipoNumero]?.completedAt) {
+        gameTeamTimestamps[partidaId][equipoNumero].completedAt = new Date();
+      }
+
     }
 
     game.state.selected = []; // Limpiar selección
@@ -2012,6 +2102,27 @@ socket.on('getTeamProgress', (partidaId, callback) => {
 //-----------------------------------------------------------
 //----------------------- Resultados ---------------------------
 
+function obtenerTiempoMaximoJuego(tipo, dificultad) {
+  const dif = (dificultad || '').toLowerCase();
+  switch (tipo) {
+    case 'Ahorcado':
+    case 'Dibujo':
+      return {
+        'fácil': 7 * 60,
+        'facil': 7 * 60,
+        'normal': 5 * 60,
+        'difícil': 3 * 60,
+        'dificil': 3 * 60
+      }[dif] || 300; // valor por defecto 5 minutos
+    case 'Memoria':
+    case 'Rompecabezas':
+      return 270; // 4.5 minutos fijos (en segundos)
+    default:
+      return 300;
+  }
+}
+
+
 async function generarResultadosJuegoActual(partidaId) {
   const config = global.partidasConfig[partidaId];
   if (!config) return [];
@@ -2041,9 +2152,12 @@ async function generarResultadosJuegoActual(partidaId) {
     // Tiempo restante del juego
     let tiempoJugado = "N/A";
     const started = gameTeamTimestamps?.[partidaId]?.[equipoNumero]?.startedAt;
-    const ended = gameTeamTimestamps?.[partidaId]?.[equipoNumero]?.completedAt;
-    if (started && ended) {
-      tiempoJugado = Math.floor((ended - started) / 1000); // en segundos
+    let ended = gameTeamTimestamps?.[partidaId]?.[equipoNumero]?.completedAt;
+    if (!ended && tipo === 'Dibujo') {
+      ended = new Date();
+      if (gameTeamTimestamps?.[partidaId]?.[equipoNumero]) {
+        gameTeamTimestamps[partidaId][equipoNumero].completedAt = ended;
+      }
     }
 
     switch (tipo) {
@@ -2056,7 +2170,7 @@ async function generarResultadosJuegoActual(partidaId) {
           tiempo = tiempoJugado;
         } else {
           progreso = "N/A";
-          tiempo = "N/A";
+          tiempo = obtenerTiempoMaximoJuego(tipo, juegoActual.dificultad);
           comentario = "Juego No Participado";
         }
         break;
@@ -2070,7 +2184,7 @@ async function generarResultadosJuegoActual(partidaId) {
           tiempo = tiempoJugado;
         } else {
           progreso = "N/A";
-          tiempo = "N/A";
+          tiempo = obtenerTiempoMaximoJuego(tipo, juegoActual.dificultad);
           comentario = "Juego No Participado";
         }
         break;
@@ -2084,7 +2198,7 @@ async function generarResultadosJuegoActual(partidaId) {
           tiempo = tiempoJugado;
         } else {
           progreso = "N/A";
-          tiempo = "N/A";
+          tiempo = obtenerTiempoMaximoJuego(tipo, juegoActual.dificultad);
           comentario = "Juego No Participado";
         }
         break;
@@ -2098,7 +2212,7 @@ async function generarResultadosJuegoActual(partidaId) {
           tiempo = tiempoJugado;
         } else {
           progreso = "N/A";
-          tiempo = "N/A";
+          tiempo = obtenerTiempoMaximoJuego(tipo, juegoActual.dificultad);
           comentario = "Juego No Participado";
         }
         break;
