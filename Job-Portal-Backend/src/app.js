@@ -132,6 +132,8 @@ const gameResults = {}; // {partidaId: {ordenJuego: {equipoNumero: result}}}
 const drawingStates = {};
 const tintaStates = {};
 
+const gameTeamTimestamps = {};
+
 const PUZZLE_CONFIG = {
   'Fácil': { size: 3, pieceSize: 150 },
   'Normal': { size: 4, pieceSize: 120 },
@@ -985,11 +987,13 @@ socket.on('RequestTimeSync', (partidaId) => {
 });
 
 // Mejora el evento nextGame
-socket.on('nextGame', (partidaId, callback) => {
+socket.on('nextGame', async (partidaId, callback) => {
   try {
     if (!global.partidasConfig || !global.partidasConfig[partidaId]) {
       return callback({ error: "Configuración no encontrada" });
     }
+
+    await generarResultadosJuegoActual(partidaId);
 
     io.to(`partida_${partidaId}`).emit('cleanPreviousGames', { partidaId });
 
@@ -1075,6 +1079,14 @@ socket.on('initMemoryGame', async ({ partidaId, equipoNumero }) => {
     if (memoryGames[gameId]) {
       socket.emit('memoryGameState', memoryGames[gameId]);
       return;
+    }
+
+    if (!gameTeamTimestamps[partidaId]) gameTeamTimestamps[partidaId] = {};
+    if (!gameTeamTimestamps[partidaId][equipoNumero]) {
+      gameTeamTimestamps[partidaId][equipoNumero] = {
+        startedAt: new Date(),
+        completedAt: null
+      };
     }
 
     // 5. Generar semilla CONSISTENTE (usar configuración actual)
@@ -1178,6 +1190,11 @@ socket.on('flipMemoryCard', ({ partidaId, equipoNumero, cardId }) => {
 
           if (game.state.matchedPairs === game.config.pairsCount) {
             game.state.gameCompleted = true;
+
+            if (gameTeamTimestamps?.[partidaId]?.[equipoNumero]) {
+              gameTeamTimestamps[partidaId][equipoNumero].completedAt = new Date();
+            }
+
             io.to(`team-${partidaId}-${equipoNumero}`).emit('memoryGameState', {
               ...game,
               action: 'complete'
@@ -1984,8 +2001,6 @@ socket.on('requestPuzzleState', ({ partidaId, equipoNumero }) => {
   }
 });
 
-
-
 //FINAL
 
 socket.on('getTeamProgress', (partidaId, callback) => {
@@ -1994,6 +2009,119 @@ socket.on('getTeamProgress', (partidaId, callback) => {
 
 });
 
+//-----------------------------------------------------------
+//----------------------- Resultados ---------------------------
+
+async function generarResultadosJuegoActual(partidaId) {
+  const config = global.partidasConfig[partidaId];
+  if (!config) return [];
+
+  const juegoActual = config.juegos[config.currentIndex];
+  const tipo = juegoActual.tipo;
+  const orden = juegoActual.Orden;
+  const tema = juegoActual.tema || 'N/A';
+
+  const pool = await poolPromise;
+  const equiposQuery = await pool.request()
+    .input('partidaId', sql.Int, partidaId)
+    .query(`
+      SELECT DISTINCT Equipo_Numero FROM Participantes_TB 
+      WHERE Partida_ID_FK = @partidaId
+    `);
+
+  const totalEquipos = equiposQuery.recordset.map(row => row.Equipo_Numero);
+
+  const resultados = [];
+
+  for (const equipoNumero of totalEquipos) {
+    let tiempo = 0;
+    let progreso = '';
+    let comentario = '';
+
+    // Tiempo restante del juego
+    let tiempoJugado = "N/A";
+    const started = gameTeamTimestamps?.[partidaId]?.[equipoNumero]?.startedAt;
+    const ended = gameTeamTimestamps?.[partidaId]?.[equipoNumero]?.completedAt;
+    if (started && ended) {
+      tiempoJugado = Math.floor((ended - started) / 1000); // en segundos
+    }
+
+    switch (tipo) {
+      case 'Ahorcado': {
+        const key = `hangman-${partidaId}-${equipoNumero}`;
+        const game = hangmanGames[key];
+        if (game) {
+          const intentosFallidos = game.state.letrasIntentadas.length - game.state.letrasAdivinadas.length;
+          progreso = `${game.state.letrasIntentadas.length}/${intentosFallidos}`;
+          tiempo = tiempoJugado;
+        } else {
+          progreso = "N/A";
+          tiempo = "N/A";
+          comentario = "Juego No Participado";
+        }
+        break;
+      }
+
+      case 'Dibujo': {
+        const key = `drawing-${partidaId}-${equipoNumero}`;
+        const imageData = drawingGames[key]?.imageData || null;
+        if (imageData) {
+          progreso = '[Imagen en Base64]';
+          tiempo = tiempoJugado;
+        } else {
+          progreso = "N/A";
+          tiempo = "N/A";
+          comentario = "Juego No Participado";
+        }
+        break;
+      }
+
+      case 'Memoria': {
+        const key = `memory-${partidaId}-${equipoNumero}-${config.currentIndex}`;
+        const game = memoryGames[key];
+        if (game) {
+          progreso = `${game.state.matchedPairs}/${game.config.pairsCount}`;
+          tiempo = tiempoJugado;
+        } else {
+          progreso = "N/A";
+          tiempo = "N/A";
+          comentario = "Juego No Participado";
+        }
+        break;
+      }
+
+      case 'Rompecabezas': {
+        const key = `puzzle-${partidaId}-${equipoNumero}`;
+        const game = puzzleGames[key];
+        if (game) {
+          progreso = `${game.state.progress}%`;
+          tiempo = tiempoJugado;
+        } else {
+          progreso = "N/A";
+          tiempo = "N/A";
+          comentario = "Juego No Participado";
+        }
+        break;
+      }
+    }
+
+    resultados.push({
+      partidaId,
+      equipoNumero,
+      juegoNumero: orden,
+      tipoJuego: tipo,
+      tiempo,
+      progreso,
+      tema,
+      comentario
+    });
+  }
+
+  console.log(`[RESULTADOS] Juego #${orden} - Tipo: ${tipo}`);
+  console.table(resultados);
+
+  return resultados;
+}
 
 
 //-----------------------------------------------------------
