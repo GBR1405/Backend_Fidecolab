@@ -337,33 +337,27 @@ export const startSimulation = async (req, res) => {
 
         // Verificar si hay una partida iniciada
         const partidaIniciada = await pool.request()
-            .input('userId', sql.Int, userId)
-            .query(`
-                SELECT Partida_ID_PK, FechaInicio 
-                    FROM Partida_TB 
-                    WHERE Profesor_ID_FK = @userId 
-                    AND EstadoPartida IN ('iniciada', 'en proceso');
-            `);
+        .input('userId', sql.Int, userId)
+        .query(`
+            SELECT Partida_ID_PK, FechaInicio 
+            FROM Partida_TB 
+            WHERE Profesor_ID_FK = @userId 
+            AND EstadoPartida IN ('iniciada', 'en proceso');
+        `);
 
         if (partidaIniciada.recordset.length > 0) {
-            const partida = partidaIniciada.recordset[0];
-            const fechaInicio = new Date(partida.FechaInicio);
-            const ahora = new Date();
-            const diferenciaHoras = (ahora - fechaInicio) / (1000 * 60 * 60);
+        const partida = partidaIniciada.recordset[0];
+        const fechaInicio = new Date(partida.FechaInicio);
+        const ahora = new Date();
+        const diferenciaHoras = (ahora - fechaInicio) / (1000 * 60 * 60);
 
-            if (diferenciaHoras > 4 || ahora.getDate() !== fechaInicio.getDate()) {
-                // Cerrar la partida automáticamente si ha pasado más de 4 horas o es de otro día
-                await pool.request()
-                    .input('partidaId', sql.Int, partida.Partida_ID_PK)
-                    .input('fechaFin', sql.DateTime, ahora)
-                    .query(`
-                        UPDATE Partida_TB 
-                        SET EstadoPartida = 'finalizada', FechaFin = @fechaFin 
-                        WHERE Partida_ID_PK = @partidaId
-                    `);
-            } else {
-                return res.status(400).json({ message: 'Ya existe una partida iniciada' });
-            }
+        if (diferenciaHoras > 4 || ahora.getDate() !== fechaInicio.getDate()) {
+            // Partida vencida → frontend debe cerrarla
+            return res.status(200).json({ status: 1, partidaId: partida.Partida_ID_PK });
+        } else {
+            // Partida aún activa → preguntar si desea cancelarla
+            return res.status(200).json({ status: 2, partidaId: partida.Partida_ID_PK });
+        }
         }
 
         const grupoVinculado = await pool.request()

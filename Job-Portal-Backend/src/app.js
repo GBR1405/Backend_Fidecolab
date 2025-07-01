@@ -15,6 +15,7 @@ import authMiddleware from './middleware/authMiddleware.js';
 import sql from 'mssql';
 import simulationRoutes from './routes/SimulacionRoutes.js';
 import seedrandom from 'seedrandom';
+import { createCanvas } from 'canvas';
 
 const app = express();
 app.set('trust proxy', 1);
@@ -2157,6 +2158,36 @@ socket.on('getTeamProgress', (partidaId, callback) => {
 //-----------------------------------------------------------
 //----------------------- Resultados ---------------------------
 
+function renderDrawingToBase64(actionsMap) {
+  const canvas = createCanvas(800, 600);
+  const ctx = canvas.getContext('2d');
+
+  ctx.fillStyle = 'white';
+  ctx.fillRect(0, 0, 800, 600);
+
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+
+  Object.values(actionsMap).forEach(paths => {
+    paths.forEach(path => {
+      ctx.strokeStyle = path.color || 'black';
+      ctx.lineWidth = path.strokeWidth || 2;
+
+      ctx.beginPath();
+      const points = path.path;
+      if (!points || points.length === 0) return;
+
+      ctx.moveTo(points[0].x, points[0].y);
+      for (let i = 1; i < points.length; i++) {
+        ctx.lineTo(points[i].x, points[i].y);
+      }
+      ctx.stroke();
+    });
+  });
+
+  return canvas.toDataURL(); // data:image/png;base64,...
+}
+
 function obtenerTiempoMaximoJuego(tipo, dificultad) {
   const dif = (dificultad || '').toLowerCase();
   switch (tipo) {
@@ -2208,6 +2239,12 @@ async function generarResultadosJuegoActual(partidaId) {
     let tiempoJugado = "N/A";
     const started = gameTeamTimestamps?.[partidaId]?.[equipoNumero]?.startedAt;
     let ended = gameTeamTimestamps?.[partidaId]?.[equipoNumero]?.completedAt;
+
+    if (started && ended) {
+      const diffSeconds = Math.floor((new Date(ended) - new Date(started)) / 1000);
+      tiempoJugado = diffSeconds;
+    }
+
     if (!ended && tipo === 'Dibujo') {
       ended = new Date();
       if (gameTeamTimestamps?.[partidaId]?.[equipoNumero]) {
@@ -2232,18 +2269,27 @@ async function generarResultadosJuegoActual(partidaId) {
       }
 
       case 'Dibujo': {
-        const key = `drawing-${partidaId}-${equipoNumero}`;
-        const imageData = drawingGames[key]?.imageData || null;
-        if (imageData) {
-          progreso = '[Imagen en Base64]';
-          tiempo = tiempoJugado;
-        } else {
-          progreso = "N/A";
-          tiempo = obtenerTiempoMaximoJuego(tipo, juegoActual.dificultad);
-          comentario = "Juego No Participado";
-        }
-        break;
+      const key = `drawing-${partidaId}-${equipoNumero}`;
+      const game = drawingGames[key];
+      let imageData = game?.imageData || null;
+
+      // Si no hay imagen, pero hay trazos, renderizar en base64 desde el servidor
+      if (!imageData && game?.actions && Object.keys(game.actions).length > 0) {
+        imageData = renderDrawingToBase64(game.actions); // 🔧 usa función auxiliar
       }
+
+      if (imageData) {
+        progreso = '[Imagen en Base64]';
+        tiempo = tiempoJugado;
+        comentario = imageData;
+      } else {
+        progreso = "N/A";
+        tiempo = obtenerTiempoMaximoJuego(tipo, juegoActual.dificultad);
+        comentario = "Juego No Participado";
+      }
+      break;
+    }
+
 
       case 'Memoria': {
         const key = `memory-${partidaId}-${equipoNumero}-${config.currentIndex}`;
