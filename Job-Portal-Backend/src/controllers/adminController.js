@@ -1471,24 +1471,41 @@ export const obtenerMetricasAdmin = async (req, res) => {
   try {
     const pool = await poolPromise;
     
-    // Consulta para obtener partidas jugadas (COUNT DISTINCT de Partida_ID_FK en Resultados_TB)
+    // Primero necesitamos obtener los IDs de los roles
+    const rolesQuery = `
+      SELECT Rol_ID_PK, Rol
+      FROM Rol_TB 
+      WHERE Rol IN ('Estudiante', 'Profesor')
+    `;
+    
+    const rolesResult = await pool.request().query(rolesQuery);
+    
+    // Buscamos los IDs correspondientes
+    const idEstudiante = rolesResult.recordset.find(r => r.Nombre_Rol === 'Estudiante')?.Rol_ID_PK;
+    const idProfesor = rolesResult.recordset.find(r => r.Nombre_Rol === 'Profesor')?.Rol_ID_PK;
+    
+    if (!idEstudiante || !idProfesor) {
+      throw new Error('No se encontraron los roles necesarios en la base de datos');
+    }
+    
+    // Consulta para obtener partidas jugadas
     const partidasQuery = `
       SELECT COUNT(DISTINCT Partida_ID_FK) AS partidasJugadas 
       FROM Resultados_TB
     `;
     
-    // Consulta para obtener cantidad de estudiantes (Rol_ID_FK = Estudiante)
+    // Consulta para obtener cantidad de estudiantes
     const estudiantesQuery = `
       SELECT COUNT(*) AS totalEstudiantes 
       FROM Usuario_TB 
-      WHERE Rol_ID_FK = 'Estudiante' AND Estado = 1
+      WHERE Rol_ID_FK = @idEstudiante AND Estado = 1
     `;
     
-    // Consulta para obtener cantidad de profesores (Rol_ID_FK = Profesor)
+    // Consulta para obtener cantidad de profesores
     const profesoresQuery = `
       SELECT COUNT(*) AS totalProfesores 
       FROM Usuario_TB 
-      WHERE Rol_ID_FK = 'Profesor' AND Estado = 1
+      WHERE Rol_ID_FK = @idProfesor AND Estado = 1
     `;
     
     // Consulta para obtener personalizaciones totales con estado = 1
@@ -1506,8 +1523,12 @@ export const obtenerMetricasAdmin = async (req, res) => {
       personalizacionesResult
     ] = await Promise.all([
       pool.request().query(partidasQuery),
-      pool.request().query(estudiantesQuery),
-      pool.request().query(profesoresQuery),
+      pool.request()
+        .input('idEstudiante', sql.Int, idEstudiante)
+        .query(estudiantesQuery),
+      pool.request()
+        .input('idProfesor', sql.Int, idProfesor)
+        .query(profesoresQuery),
       pool.request().query(personalizacionesQuery)
     ]);
     
@@ -1522,7 +1543,10 @@ export const obtenerMetricasAdmin = async (req, res) => {
     res.json(metricas);
   } catch (error) {
     console.error("Error obteniendo métricas administrativas:", error);
-    res.status(500).json({ error: "Error obteniendo las métricas administrativas." });
+    res.status(500).json({ 
+      error: "Error obteniendo las métricas administrativas.",
+      details: error.message 
+    });
   }
 };
 
