@@ -17,8 +17,6 @@ import simulationRoutes from './routes/SimulacionRoutes.js';
 import seedrandom from 'seedrandom';
 
 import pureimage from 'pureimage';
-const { createImage } = pureimage;
-
 import { Buffer } from 'buffer';
 
 const app = express();
@@ -2162,11 +2160,12 @@ socket.on('getTeamProgress', (partidaId, callback) => {
 //-----------------------------------------------------------
 //----------------------- Resultados ---------------------------
 
-function renderDrawingToBase64(actionsMap) {
+async function renderDrawingToBase64(actionsMap) {
+  const { createImage } = pureimage; // 👈 esta línea evita el error
+
   const img = createImage(800, 600);
   const ctx = img.getContext('2d');
 
-  // Fondo blanco
   ctx.fillStyle = 'white';
   ctx.fillRect(0, 0, 800, 600);
 
@@ -2192,7 +2191,6 @@ function renderDrawingToBase64(actionsMap) {
     });
   });
 
-  // Convertir imagen a base64
   const chunks = [];
   const stream = img.encode('png');
 
