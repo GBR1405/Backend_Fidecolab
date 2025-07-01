@@ -1474,7 +1474,6 @@ socket.on('initHangmanGame', ({ partidaId, equipoNumero }) => {
     io.to(`team-${partidaId}-${equipoNumero}`).emit('hangmanGameState', hangmanGames[gameId]);
 
   } catch (error) {
-    console.error('Error inicializando ahorcado:', error);
     socket.emit('hangmanGameError', { 
       message: error.message,
       stack: error.stack // Opcional: para debugging en cliente
