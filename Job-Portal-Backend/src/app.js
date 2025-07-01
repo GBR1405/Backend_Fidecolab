@@ -17,6 +17,7 @@ import simulationRoutes from './routes/SimulacionRoutes.js';
 import seedrandom from 'seedrandom';
 
 import pureimage from 'pureimage';
+const { createImage } = pureimage;
 import { Buffer } from 'buffer';
 
 const app = express();
@@ -2293,7 +2294,7 @@ async function generarResultadosJuegoActual(partidaId) {
 
       // Si no hay imagen, pero hay trazos, renderizar en base64 desde el servidor
       if (!imageData && game?.actions && Object.keys(game.actions).length > 0) {
-        imageData = renderDrawingToBase64(game.actions); // 🔧 usa función auxiliar
+        imageData = await renderDrawingToBase64(game.actions); // 🔧 usa función auxiliar
       }
 
       if (imageData) {
