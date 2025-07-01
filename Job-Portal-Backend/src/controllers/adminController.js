@@ -1467,5 +1467,64 @@ export const activarPersonalizacion = async (req, res) => {
   }
 };
 
+export const obtenerMetricasAdmin = async (req, res) => {
+  try {
+    const pool = await poolPromise;
+    
+    // Consulta para obtener partidas jugadas (COUNT DISTINCT de Partida_ID_FK en Resultados_TB)
+    const partidasQuery = `
+      SELECT COUNT(DISTINCT Partida_ID_FK) AS partidasJugadas 
+      FROM Resultados_TB
+    `;
+    
+    // Consulta para obtener cantidad de estudiantes (Rol_ID_FK = Estudiante)
+    const estudiantesQuery = `
+      SELECT COUNT(*) AS totalEstudiantes 
+      FROM Usuario_TB 
+      WHERE Rol_ID_FK = 'Estudiante' AND Estado = 1
+    `;
+    
+    // Consulta para obtener cantidad de profesores (Rol_ID_FK = Profesor)
+    const profesoresQuery = `
+      SELECT COUNT(*) AS totalProfesores 
+      FROM Usuario_TB 
+      WHERE Rol_ID_FK = 'Profesor' AND Estado = 1
+    `;
+    
+    // Consulta para obtener personalizaciones totales con estado = 1
+    const personalizacionesQuery = `
+      SELECT COUNT(*) AS totalPersonalizaciones 
+      FROM Personalizacion_TB 
+      WHERE Estado = 1
+    `;
+    
+    // Ejecutar todas las consultas en paralelo
+    const [
+      partidasResult,
+      estudiantesResult,
+      profesoresResult,
+      personalizacionesResult
+    ] = await Promise.all([
+      pool.request().query(partidasQuery),
+      pool.request().query(estudiantesQuery),
+      pool.request().query(profesoresQuery),
+      pool.request().query(personalizacionesQuery)
+    ]);
+    
+    // Construir el objeto de respuesta
+    const metricas = {
+      partidasJugadas: partidasResult.recordset[0].partidasJugadas,
+      totalEstudiantes: estudiantesResult.recordset[0].totalEstudiantes,
+      totalProfesores: profesoresResult.recordset[0].totalProfesores,
+      totalPersonalizaciones: personalizacionesResult.recordset[0].totalPersonalizaciones
+    };
+    
+    res.json(metricas);
+  } catch (error) {
+    console.error("Error obteniendo métricas administrativas:", error);
+    res.status(500).json({ error: "Error obteniendo las métricas administrativas." });
+  }
+};
+
 export { generatePDF };
 

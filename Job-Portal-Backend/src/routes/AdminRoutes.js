@@ -3,13 +3,15 @@ import express from 'express';
 import {generateStudentsReport, agregarCurso, obtenerCursos, obtenerUltimoGrupoCurso, guardarGrupo, agregarProfesor,
         getAllProfessors, getAllGroups, generateProfesorReport, generatePartidaReport, generateBitacoraReport, obtenerCursosDelProfesor,
         getGruposDisponibles, asignarGrupo, desvincularGrupo, obtenerBitacoraDescargas, editarPersonalizacion, desactivarPersonalizacion,
-        activarPersonalizacion
+        activarPersonalizacion, obtenerMetricasAdmin
 } from '../controllers/adminController.js';
 
 import { authMiddleware } from "../middleware/authMiddleware.js";
 import { roleMiddleware } from "../middleware/roleMiddleware.js";
 
 const router = express.Router();
+
+router.get('/metricas',authMiddleware, roleMiddleware(["Administrador"]), obtenerMetricasAdmin);
 
 router.get('/report-students',authMiddleware, roleMiddleware(["Administrador"]), generateStudentsReport);
 router.post('/add-course',authMiddleware, roleMiddleware(["Administrador"]), agregarCurso);

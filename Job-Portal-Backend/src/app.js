@@ -558,13 +558,17 @@ io.on('connection', (socket) => {
       console.log(`[INFO] Partida ${partidaId} finalizada normalmente.`);
     }
 
+    const now = new Date();
+
     // 3. Marcar la partida como finalizada en la base de datos
     await poolPromise.then(pool => 
       pool.request()
         .input('partidaId', sql.Int, partidaId)
+        .input('fechaFin', sql.DateTime, now)
         .query(`
           UPDATE Partida_TB
-          SET EstadoPartida = 'finalizada'
+          SET EstadoPartida = 'finalizada',
+              FechaFin = @fechaFin
           WHERE Partida_ID_PK = @partidaId;
         `)
     );
