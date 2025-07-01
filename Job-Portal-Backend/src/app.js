@@ -15,8 +15,8 @@ import authMiddleware from './middleware/authMiddleware.js';
 import sql from 'mssql';
 import simulationRoutes from './routes/SimulacionRoutes.js';
 import seedrandom from 'seedrandom';
+import svg2img from 'svg2img';
 
-import { Canvas } from 'skia-canvas';
 
 const app = express();
 app.set('trust proxy', 1);
@@ -2165,34 +2165,50 @@ async function renderDrawingToBase64(partidaId, equipoNumero) {
   const game = drawingGames[gameId];
 
   if (!game || !game.actions) {
-    throw new Error(`No hay trazos para la partida ${partidaId}, equipo ${equipoNumero}`);
+    throw new Error(`No hay trazos para partida ${partidaId}, equipo ${equipoNumero}`);
   }
 
-  const canvas = new Canvas(800, 600); // o tamaño dinámico si lo deseas
-  const ctx = canvas.getContext('2d');
+  const width = 800;
+  const height = 600;
 
-  ctx.fillStyle = '#FFFFFF';
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  // 1. Construir elementos SVG por cada trazo
+  let pathsSVG = '';
 
   for (const [userId, paths] of Object.entries(game.actions)) {
     for (const path of paths) {
-      if (!path?.points?.length) continue;
+      if (!path.points?.length) continue;
 
-      ctx.strokeStyle = path.color || 'black';
-      ctx.lineWidth = path.strokeWidth || 2;
-      ctx.beginPath();
+      const d = path.points.map((p, i) =>
+        `${i === 0 ? 'M' : 'L'}${p.x},${p.y}`
+      ).join(' ');
 
-      const [start, ...rest] = path.points;
-      ctx.moveTo(start.x, start.y);
-      for (const point of rest) {
-        ctx.lineTo(point.x, point.y);
-      }
-
-      ctx.stroke();
+      pathsSVG += `
+        <path d="${d}"
+          stroke="${path.color || 'black'}"
+          stroke-width="${path.strokeWidth || 2}"
+          fill="none"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        />
+      `;
     }
   }
 
-  return await canvas.toDataURL();
+  const svg = `
+    <svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">
+      <rect width="100%" height="100%" fill="white"/>
+      ${pathsSVG}
+    </svg>
+  `;
+
+  // 2. Convertir SVG a PNG base64 usando svg2img
+  return new Promise((resolve, reject) => {
+    svg2img(svg, { format: 'png', width, height }, (error, buffer) => {
+      if (error) return reject(error);
+      const base64 = `data:image/png;base64,${buffer.toString('base64')}`;
+      resolve(base64);
+    });
+  });
 }
 
 function obtenerTiempoMaximoJuego(tipo, dificultad) {
