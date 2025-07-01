@@ -16,8 +16,7 @@ import sql from 'mssql';
 import simulationRoutes from './routes/SimulacionRoutes.js';
 import seedrandom from 'seedrandom';
 
-import pureimage from 'pureimage';
-import { Buffer } from 'buffer';
+import { Canvas } from 'skia-canvas';
 
 const app = express();
 app.set('trust proxy', 1);
@@ -2161,47 +2160,39 @@ socket.on('getTeamProgress', (partidaId, callback) => {
 //-----------------------------------------------------------
 //----------------------- Resultados ---------------------------
 
-async function renderDrawingToBase64(actionsMap) {
-  const img = pureimage.make(800, 600); // ✅ cambio aquí
-  const ctx = img.getContext('2d');
+async function renderDrawingToBase64(partidaId, equipoNumero) {
+  const gameId = `drawing-${partidaId}-${equipoNumero}`;
+  const game = drawingGames[gameId];
 
-  ctx.fillStyle = 'white';
-  ctx.fillRect(0, 0, 800, 600);
+  if (!game || !game.actions) {
+    throw new Error(`No hay trazos para la partida ${partidaId}, equipo ${equipoNumero}`);
+  }
 
-  ctx.lineJoin = 'round';
-  ctx.lineCap = 'round';
+  const canvas = new Canvas(800, 600); // o tamaño dinámico si lo deseas
+  const ctx = canvas.getContext('2d');
 
-  Object.values(actionsMap).forEach(paths => {
-    paths.forEach(path => {
+  ctx.fillStyle = '#FFFFFF';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  for (const [userId, paths] of Object.entries(game.actions)) {
+    for (const path of paths) {
+      if (!path?.points?.length) continue;
+
       ctx.strokeStyle = path.color || 'black';
       ctx.lineWidth = path.strokeWidth || 2;
-
-      const points = path.path;
-      if (!points || points.length === 0) return;
-
       ctx.beginPath();
-      ctx.moveTo(points[0].x, points[0].y);
 
-      for (let i = 1; i < points.length; i++) {
-        ctx.lineTo(points[i].x, points[i].y);
+      const [start, ...rest] = path.points;
+      ctx.moveTo(start.x, start.y);
+      for (const point of rest) {
+        ctx.lineTo(point.x, point.y);
       }
 
       ctx.stroke();
-    });
-  });
+    }
+  }
 
-  const chunks = [];
-  const stream = img.encode('png');
-
-  return new Promise((resolve, reject) => {
-    stream.on('data', chunk => chunks.push(chunk));
-    stream.on('end', () => {
-      const buffer = Buffer.concat(chunks);
-      const base64 = buffer.toString('base64');
-      resolve(`data:image/png;base64,${base64}`);
-    });
-    stream.on('error', reject);
-  });
+  return await canvas.toDataURL();
 }
 
 function obtenerTiempoMaximoJuego(tipo, dificultad) {
@@ -2291,7 +2282,7 @@ async function generarResultadosJuegoActual(partidaId) {
 
       // Si no hay imagen, pero hay trazos, renderizar en base64 desde el servidor
       if (!imageData && game?.actions && Object.keys(game.actions).length > 0) {
-        imageData = await renderDrawingToBase64(game.actions); // 🔧 usa función auxiliar
+        imageData = await renderDrawingToBase64(partidaId, equipoNumero);
       }
 
       if (imageData) {
