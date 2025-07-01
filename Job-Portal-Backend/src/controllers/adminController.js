@@ -1481,8 +1481,8 @@ export const obtenerMetricasAdmin = async (req, res) => {
     const rolesResult = await pool.request().query(rolesQuery);
     
     // Buscamos los IDs correspondientes
-    const idEstudiante = rolesResult.recordset.find(r => r.Nombre_Rol === 'Estudiante')?.Rol_ID_PK;
-    const idProfesor = rolesResult.recordset.find(r => r.Nombre_Rol === 'Profesor')?.Rol_ID_PK;
+    const idEstudiante = rolesResult.recordset.find(r => r.Rol === 'Estudiante')?.Rol_ID_PK;
+    const idProfesor = rolesResult.recordset.find(r => r.Rol === 'Profesor')?.Rol_ID_PK;
     
     if (!idEstudiante || !idProfesor) {
       throw new Error('No se encontraron los roles necesarios en la base de datos');
