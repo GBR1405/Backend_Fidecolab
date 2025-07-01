@@ -509,7 +509,7 @@ io.on('connection', (socket) => {
     }
 
     // 1. Guardar el último juego jugado
-    await generarResultadosJuegoActual(partidaId);
+    gameResults[partidaId] = await generarResultadosJuegoActual(partidaId);
 
     const juegos = config.juegos;
     const currentIndex = config.currentIndex;
