@@ -12,6 +12,9 @@
   },
   "author": "",
   "license": "ISC",
+  "engines": {
+    "node": "18.x"
+  },
   "dependencies": {
     "@colyseus/core": "^0.16.10",
     "@colyseus/schema": "^3.0.18",
