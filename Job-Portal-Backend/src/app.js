@@ -17,7 +17,9 @@ import simulationRoutes from './routes/SimulacionRoutes.js';
 import seedrandom from 'seedrandom';
 import { createCanvas } from 'canvas';
 
-import { createImage } from 'pureimage';
+import pureimage from 'pureimage';
+const { createImage } = pureimage;
+
 import { Buffer } from 'buffer';
 
 const app = express();
