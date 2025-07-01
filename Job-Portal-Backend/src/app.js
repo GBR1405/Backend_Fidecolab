@@ -17,6 +17,9 @@ import simulationRoutes from './routes/SimulacionRoutes.js';
 import seedrandom from 'seedrandom';
 import { createCanvas } from 'canvas';
 
+import { createImage } from 'pureimage';
+import { Buffer } from 'buffer';
+
 const app = express();
 app.set('trust proxy', 1);
 const pool = await poolPromise;
@@ -2159,33 +2162,48 @@ socket.on('getTeamProgress', (partidaId, callback) => {
 //----------------------- Resultados ---------------------------
 
 function renderDrawingToBase64(actionsMap) {
-  const canvas = createCanvas(800, 600);
-  const ctx = canvas.getContext('2d');
+  const img = createImage(800, 600);
+  const ctx = img.getContext('2d');
 
+  // Fondo blanco
   ctx.fillStyle = 'white';
   ctx.fillRect(0, 0, 800, 600);
 
-  ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
+  ctx.lineCap = 'round';
 
   Object.values(actionsMap).forEach(paths => {
     paths.forEach(path => {
       ctx.strokeStyle = path.color || 'black';
       ctx.lineWidth = path.strokeWidth || 2;
 
-      ctx.beginPath();
       const points = path.path;
       if (!points || points.length === 0) return;
 
+      ctx.beginPath();
       ctx.moveTo(points[0].x, points[0].y);
+
       for (let i = 1; i < points.length; i++) {
         ctx.lineTo(points[i].x, points[i].y);
       }
+
       ctx.stroke();
     });
   });
 
-  return canvas.toDataURL(); // data:image/png;base64,...
+  // Convertir imagen a base64
+  const chunks = [];
+  const stream = img.encode('png');
+
+  return new Promise((resolve, reject) => {
+    stream.on('data', chunk => chunks.push(chunk));
+    stream.on('end', () => {
+      const buffer = Buffer.concat(chunks);
+      const base64 = buffer.toString('base64');
+      resolve(`data:image/png;base64,${base64}`);
+    });
+    stream.on('error', reject);
+  });
 }
 
 function obtenerTiempoMaximoJuego(tipo, dificultad) {
