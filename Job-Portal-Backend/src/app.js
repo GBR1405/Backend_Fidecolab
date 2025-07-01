@@ -506,6 +506,7 @@ io.on('connection', (socket) => {
   // Al final del io.on('connection', ...)
   socket.on('finishGame', async (partidaId, callback) => {
   try {
+    console.log(`[INFO] Finalizando partida ${partidaId}`);
     const config = global.partidasConfig[partidaId];
     if (!config) {
       return callback({ error: "Partida no encontrada" });
