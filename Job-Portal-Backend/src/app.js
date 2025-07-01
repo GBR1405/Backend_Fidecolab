@@ -17,7 +17,6 @@ import simulationRoutes from './routes/SimulacionRoutes.js';
 import seedrandom from 'seedrandom';
 
 import pureimage from 'pureimage';
-const { createImage } = pureimage;
 import { Buffer } from 'buffer';
 
 const app = express();
@@ -2163,9 +2162,7 @@ socket.on('getTeamProgress', (partidaId, callback) => {
 //----------------------- Resultados ---------------------------
 
 async function renderDrawingToBase64(actionsMap) {
-  const { createImage } = pureimage; // 👈 esta línea evita el error
-
-  const img = createImage(800, 600);
+  const img = pureimage.make(800, 600); // ✅ cambio aquí
   const ctx = img.getContext('2d');
 
   ctx.fillStyle = 'white';
