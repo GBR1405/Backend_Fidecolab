@@ -15,7 +15,6 @@ import authMiddleware from './middleware/authMiddleware.js';
 import sql from 'mssql';
 import simulationRoutes from './routes/SimulacionRoutes.js';
 import seedrandom from 'seedrandom';
-import { createCanvas } from 'canvas';
 
 import pureimage from 'pureimage';
 const { createImage } = pureimage;
