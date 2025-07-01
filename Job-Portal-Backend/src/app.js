@@ -508,16 +508,21 @@ io.on('connection', (socket) => {
       return callback({ error: "Partida no encontrada" });
     }
 
-    // 1. Guardar el último juego jugado
-    gameResults[partidaId] = await generarResultadosJuegoActual(partidaId);
-
     const juegos = config.juegos;
     const currentIndex = config.currentIndex;
+
+    // 1. Generar resultados de TODOS los juegos jugados
+    gameResults[partidaId] = [];
+
+    for (let i = 0; i <= currentIndex; i++) {
+      config.currentIndex = i; // Forzamos índice actual
+      const resultadosParciales = await generarResultadosJuegoActual(partidaId);
+      gameResults[partidaId].push(...resultadosParciales);
+    }
 
     // 2. Detectar si la partida se terminó anticipadamente
     const finalizacionAnticipada = currentIndex < juegos.length - 1;
 
-    // 3. Si se finalizó antes de completar todos los juegos, marcar los juegos cancelados
     if (finalizacionAnticipada) {
       const pool = await poolPromise;
       const equiposQuery = await pool.request()
@@ -550,7 +555,7 @@ io.on('connection', (socket) => {
       console.log(`[INFO] Partida ${partidaId} finalizada normalmente.`);
     }
 
-    // 4. Marcar la partida como finalizada
+    // 3. Marcar la partida como finalizada en la base de datos
     await poolPromise.then(pool => 
       pool.request()
         .input('partidaId', sql.Int, partidaId)
@@ -561,7 +566,7 @@ io.on('connection', (socket) => {
         `)
     );
 
-    // 5. Agrupar resultados por equipo
+    // 4. Agrupar resultados por equipo
     function agruparResultadosPorEquipo(resultadosArray) {
       const porEquipo = {};
       for (const resultado of resultadosArray) {
@@ -585,7 +590,7 @@ io.on('connection', (socket) => {
       return Object.values(porEquipo);
     }
 
-    const resultadosFinales = gameResults[partidaId];
+    const resultadosFinales = gameResults[partidaId] || [];
     const resultadosPorEquipo = agruparResultadosPorEquipo(resultadosFinales);
 
     const pool = await poolPromise;
@@ -605,7 +610,7 @@ io.on('connection', (socket) => {
 
     console.log(`[BD] Resultados insertados para ${resultadosPorEquipo.length} equipos`);
 
-    // 6. Limpiar toda la información en memoria
+    // 5. Limpiar memoria
     delete gameResults[partidaId];
     delete gameTeamTimestamps[partidaId];
     delete global.partidasConfig[partidaId];
@@ -618,15 +623,13 @@ io.on('connection', (socket) => {
       });
     });
 
-    // 7. Notificar a todos
+    // 6. Notificar a todos y devolver confirmación
     io.to(`partida_${partidaId}`).emit('gameFinished', { partidaId });
-
-    // 8. Confirmar al emisor
     callback({ success: true });
 
-    // 9. Ver resultados en consola
+    // 7. Debug de resultados
     console.log("[RESULTADOS FINALES]");
-    console.table(gameResults[partidaId]);
+    console.table(resultadosFinales);
 
   } catch (error) {
     console.error('Error al finalizar la partida:', error);
