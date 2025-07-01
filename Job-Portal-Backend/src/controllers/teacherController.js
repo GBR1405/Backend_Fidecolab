@@ -446,7 +446,7 @@ export const startSimulation = async (req, res) => {
             io.emit('JoinRoom', partidaId, estudianteId);
         }
 
-        res.status(200).json({ message: 'Partida iniciada correctamente', partidaId });
+        res.status(200).json({status: 3, message: 'Partida iniciada correctamente', partidaId });
 
     } catch (error) {
         console.error('Error al iniciar la simulación:', error);
