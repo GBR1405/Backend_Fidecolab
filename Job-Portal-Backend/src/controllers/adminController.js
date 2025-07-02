@@ -12,6 +12,7 @@ import { GenerarBitacora } from "../controllers/generalController.js";
 
 import temp from 'temp';
 import { v4 as uuidv4 } from 'uuid';
+import pkg from 'pdfkit-table';
 const { table } = pkg;
 
 const storage = multer.memoryStorage();
