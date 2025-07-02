@@ -1060,15 +1060,15 @@ socket.on('getGameConfig', async (partidaId, callback) => {
           CASE tj.Juego
             WHEN 'Rompecabezas' THEN 
               CASE cj.Dificultad
-                WHEN 1 THEN '3x3'
-                WHEN 2 THEN '4x4'
-                WHEN 3 THEN '5x5'
+                WHEN 1 THEN '6x6'
+                WHEN 2 THEN '7x7'
+                WHEN 3 THEN '8x8'
               END
             WHEN 'Dibujo' THEN 
               CASE cj.Dificultad
-                WHEN 1 THEN '3 minutos'
-                WHEN 2 THEN '2 minutos'
-                WHEN 3 THEN '1 minuto'
+                WHEN 1 THEN '6 minutos'
+                WHEN 2 THEN '4 minutos'
+                WHEN 3 THEN '3 minuto'
               END
             WHEN 'Ahorcado' THEN 
               CASE cj.Dificultad
