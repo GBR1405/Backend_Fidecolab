@@ -427,22 +427,57 @@ export const startSimulation = async (req, res) => {
         const grupos = [];
         let i = 0;
         while (i < shuffledEstudiantes.length) {
-            const remaining = shuffledEstudiantes.length - i;
+        const restantes = shuffledEstudiantes.length - i;
 
-            if (remaining === 4 || remaining === 3) {
-                grupos.push(shuffledEstudiantes.slice(i, i + remaining));
-                break;
-            } else if (remaining === 5) {
-                // Caso crítico: 5 → 3 y 2 → mejor 3 y 3
-                grupos.push(shuffledEstudiantes.slice(i, i + 3));
-                i += 3;
-                grupos.push(shuffledEstudiantes.slice(i, i + 3));
-                break;
-            } else {
-                grupos.push(shuffledEstudiantes.slice(i, i + 4));
-                i += 4;
-            }
+        if (restantes === 3 || restantes === 4) {
+            grupos.push(shuffledEstudiantes.slice(i, i + restantes));
+            break;
         }
+
+        if (restantes === 5) {
+            grupos.push(shuffledEstudiantes.slice(i, i + 3));
+            i += 3;
+            grupos.push(shuffledEstudiantes.slice(i, i + 3)); // solo se tomarán 2, pero resolveremos después
+            break;
+        }
+
+        if (restantes === 6) {
+            grupos.push(shuffledEstudiantes.slice(i, i + 3));
+            i += 3;
+            grupos.push(shuffledEstudiantes.slice(i, i + 3));
+            break;
+        }
+
+        if (restantes === 7) {
+            grupos.push(shuffledEstudiantes.slice(i, i + 4));
+            i += 4;
+            grupos.push(shuffledEstudiantes.slice(i, i + 3));
+            break;
+        }
+
+        grupos.push(shuffledEstudiantes.slice(i, i + 4));
+        i += 4;
+    }
+
+    // 🔁 Revisión final: si el último grupo tiene 1 o 2 → reequilibrar
+    const ultimo = grupos[grupos.length - 1];
+    if (ultimo.length < 3 && grupos.length > 1) {
+        // Quitamos elementos de los grupos anteriores (de atrás hacia adelante)
+        const necesarios = 3 - ultimo.length;
+
+        for (let j = grupos.length - 2; j >= 0 && grupos[j].length > 3 && ultimo.length < 3; j--) {
+            // Mover uno del grupo j al último
+            const mover = grupos[j].pop();
+            ultimo.push(mover);
+        }
+
+        // Si aún no alcanza, combinar con anterior grupo
+        if (ultimo.length < 3) {
+            const penultimo = grupos[grupos.length - 2];
+            grupos[grupos.length - 2] = penultimo.concat(ultimo);
+            grupos.pop(); // eliminar último
+        }
+    }
 
         // Insertar participantes en la tabla Participantes_TB
         for (let i = 0; i < grupos.length; i++) {
