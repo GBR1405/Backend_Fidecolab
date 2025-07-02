@@ -413,15 +413,35 @@ export const startSimulation = async (req, res) => {
         const estudiantesIds = estudiantes.recordset.map(row => row.Usuario_ID_PK);
 
         // Dividir estudiantes en grupos de 4
-        const grupos = [];
-        for (let i = 0; i < estudiantesIds.length; i += 4) {
-            grupos.push(estudiantesIds.slice(i, i + 4));
-        }
+        const shuffleArray = (array) => {
+            for (let i = array.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [array[i], array[j]] = [array[j], array[i]];
+            }
+            return array;
+        };
+
+        const shuffledEstudiantes = shuffleArray(estudiantesIds);
 
         // Asegurar que no haya grupos de menos de 3
-        if (grupos.length > 1 && grupos[grupos.length - 1].length < 3) {
-            const ultimoGrupo = grupos.pop();
-            grupos[grupos.length - 1] = grupos[grupos.length - 1].concat(ultimoGrupo);
+        const grupos = [];
+        let i = 0;
+        while (i < shuffledEstudiantes.length) {
+            const remaining = shuffledEstudiantes.length - i;
+
+            if (remaining === 4 || remaining === 3) {
+                grupos.push(shuffledEstudiantes.slice(i, i + remaining));
+                break;
+            } else if (remaining === 5) {
+                // Caso crítico: 5 → 3 y 2 → mejor 3 y 3
+                grupos.push(shuffledEstudiantes.slice(i, i + 3));
+                i += 3;
+                grupos.push(shuffledEstudiantes.slice(i, i + 3));
+                break;
+            } else {
+                grupos.push(shuffledEstudiantes.slice(i, i + 4));
+                i += 4;
+            }
         }
 
         // Insertar participantes en la tabla Participantes_TB
