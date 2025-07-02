@@ -1022,99 +1022,11 @@ export const agregarProfesor = async (req, res) => {
     // Generar el PDF solo con los nuevos profesores
     let pdfPath = '';
     if (nuevosProfesores.length > 0) {
-      // Función para generar el PDF con el formato mejorado
-      const generatePDF = async (profesores, omitidos) => {
-        try {
-          const doc = new PDFDocument({ margin: 30, size: 'A4' });
-          const tempFilePath = path.join(os.tmpdir(), `credenciales_profesores_${Date.now()}.pdf`);
-          const writeStream = fs.createWriteStream(tempFilePath);
-          doc.pipe(writeStream);
-
-          // Configuración de estilos
-          doc.font('Helvetica-Bold').fontSize(18).fillColor('black')
-             .text('Credenciales de Profesores', { align: 'center' });
-          doc.moveDown(0.5);
-
-          if (omitidos > 0) {
-            doc.font('Helvetica').fontSize(12).fillColor('black')
-               .text(`Nota: Se omitieron ${omitidos} profesores porque ya estaban registrados.`, { align: 'center' });
-            doc.moveDown(1);
-          }
-
-          // Encabezados de tabla
-          const headers = ['Nombre', 'Apellidos', 'Correo', 'Contraseña'];
-          const columnWidths = [120, 150, 150, 100];
-          const rowHeight = 30;
-          const initialY = doc.y;
-
-          // Dibujar encabezados
-          doc.font('Helvetica-Bold').fontSize(10).fillColor('black');
-          let x = doc.page.margins.left;
-          headers.forEach((header, i) => {
-            doc.text(header, x, initialY, { width: columnWidths[i], align: 'left' });
-            x += columnWidths[i];
-          });
-
-          // Dibujar línea bajo encabezados
-          doc.moveTo(doc.page.margins.left, initialY + rowHeight)
-             .lineTo(doc.page.margins.left + columnWidths.reduce((a, b) => a + b, 0), initialY + rowHeight)
-             .stroke();
-
-          // Contenido de la tabla
-          doc.font('Helvetica').fontSize(10).fillColor('black');
-          let currentY = initialY + rowHeight;
-
-          profesores.forEach((profesor, index) => {
-            // Verificar si hay espacio suficiente en la página actual
-            if (currentY + rowHeight > doc.page.height - doc.page.margins.bottom) {
-              doc.addPage();
-              currentY = doc.page.margins.top;
-              
-              // Redibujar encabezados en nueva página
-              doc.font('Helvetica-Bold').fontSize(10).fillColor('black');
-              x = doc.page.margins.left;
-              headers.forEach((header, i) => {
-                doc.text(header, x, currentY, { width: columnWidths[i], align: 'left' });
-                x += columnWidths[i];
-              });
-              currentY += rowHeight;
-              doc.moveTo(doc.page.margins.left, currentY)
-                 .lineTo(doc.page.margins.left + columnWidths.reduce((a, b) => a + b, 0), currentY)
-                 .stroke();
-            }
-
-            // Dibujar fila
-            x = doc.page.margins.left;
-            doc.text(profesor.name, x, currentY, { width: columnWidths[0], align: 'left' });
-            x += columnWidths[0];
-            doc.text(`${profesor.lastName1} ${profesor.lastName2}`, x, currentY, { width: columnWidths[1], align: 'left' });
-            x += columnWidths[1];
-            doc.text(profesor.email, x, currentY, { width: columnWidths[2], align: 'left' });
-            x += columnWidths[2];
-            doc.text(profesor.generatedPassword, x, currentY, { width: columnWidths[3], align: 'left' });
-            
-            // Dibujar línea bajo la fila
-            currentY += rowHeight;
-            doc.moveTo(doc.page.margins.left, currentY)
-               .lineTo(doc.page.margins.left + columnWidths.reduce((a, b) => a + b, 0), currentY)
-               .stroke();
-          });
-
-          doc.end();
-
-          return new Promise((resolve, reject) => {
-            writeStream.on('finish', () => resolve(tempFilePath));
-            writeStream.on('error', reject);
-          });
-        } catch (error) {
-          console.error('Error al generar PDF:', error);
-          throw error;
-        }
-      };
-
+      // Si hay nuevos profesores, generar el PDF con los datos de los profesores insertados
       pdfPath = await generatePDF(nuevosProfesores, saltados);
       console.log('PDF generado en:', pdfPath);
     } else {
+      // Si todos fueron saltados, generar un PDF vacío
       pdfPath = await generatePDF([], saltados);
       console.log('Todos los profesores fueron omitidos, PDF vacío generado.');
     }
