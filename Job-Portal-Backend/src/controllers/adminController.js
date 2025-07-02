@@ -10,11 +10,6 @@ import sql from 'mssql';
 import bcrypt from 'bcryptjs';
 import { GenerarBitacora } from "../controllers/generalController.js";
 
-import temp from 'temp';
-import { v4 as uuidv4 } from 'uuid';
-import pkg from 'pdfkit-table';
-const { table } = pkg;
-
 const storage = multer.memoryStorage();
 const upload = multer({ storage });
 
@@ -922,9 +917,10 @@ export const agregarProfesor = async (req, res) => {
   try {
     const { manual, profesores } = req.body;
     let profesoresData = [];
-    let saltados = 0;
-    let nuevosProfesores = [];
+    let saltados = 0;  // Variable para contar los usuarios saltados por duplicidad
+    let nuevosProfesores = [];  // Almacenar solo los profesores nuevos para el PDF
 
+    // Obtener el ID del rol 'Profesor'
     const pool = await poolPromise;
     const rolResult = await pool.request().query(`SELECT Rol_ID_PK FROM Rol_TB WHERE Rol = 'Profesor'`);
 
@@ -933,145 +929,125 @@ export const agregarProfesor = async (req, res) => {
     }
 
     const rolId = rolResult.recordset[0].Rol_ID_PK;
+    console.log('ID del rol de Profesor:', rolId);
 
     if (manual === "true") {
-      const { name, lastName1, lastName2, email, gender } = req.body;
+      // Carga manual
+      const { name, lastName1, lastName2, email, gender  } = req.body;
+
+      console.log('Datos para carga manual:', { name, lastName1, lastName2, email, gender  });
 
       if (!name || !lastName1 || !lastName2 || !email || !gender) {
         return res.status(400).json({ message: 'Todos los campos son obligatorios' });
-      }
+    }
 
+      // Generar una contraseña aleatoria y encriptarla
       const generatedPassword = generatePassword(name);
       const hashedPassword = await bcrypt.hash(generatedPassword, 10);
+
+      console.log('Contraseña generada:', generatedPassword);
 
       profesoresData.push({
         name,
         lastName1,
         lastName2,
         email,
-        password: hashedPassword,
-        generatedPassword,
+        password: hashedPassword,  // Usar la contraseña encriptada
+        generatedPassword,  // Contraseña generada (sin encriptar) para el PDF
         rolId,
         generoId: gender
       });
 
+      console.log('Profesores agregados manualmente:', profesoresData);
+
     } else {
+      // Si ya tienes el JSON de profesores
       if (!profesores || profesores.length === 0) {
         return res.status(400).json({ mensaje: "No se han recibido datos de profesores." });
       }
 
+      console.log('Datos recibidos del JSON:', profesores);
+
       profesoresData = profesores.map(prof => {
-        const generatedPassword = generatePassword(prof.name);
+        const generatedPassword = generatePassword(prof.name);  // Utilizar 'name' como en el JSON de entrada
         return {
           name: prof.name,
           lastName1: prof.lastName1,
           lastName2: prof.lastName2,
           email: prof.email,
-          password: bcrypt.hashSync(generatedPassword, 10),
-          generatedPassword,
+          password: bcrypt.hashSync(generatedPassword, 10),  // Encriptar la contraseña
+          generatedPassword,  // Guardar la contraseña generada para el PDF
           rolId,
-          generoId: prof.gender
+          generoId: prof.gender  // Usar 'gender' como en el JSON de entrada
         };
       });
+
+      console.log('Profesores cargados desde el JSON:', profesoresData);
     }
 
+    // Insertar los profesores en la base de datos
     for (const prof of profesoresData) {
+      console.log('Insertando profesor:', prof);
+
+      // Verificar si el correo ya existe
       const existingUser = await pool.request()
         .input("email", sql.NVarChar, prof.email)
         .query(`SELECT 1 FROM Usuario_TB WHERE Correo = @email`);
 
       if (existingUser.recordset.length > 0) {
-        saltados++;
-        continue;
+        console.log(`El correo ${prof.email} ya existe. Se omite este profesor.`);
+        saltados++;  // Incrementar contador de usuarios saltados
+        continue;  // Saltar a la siguiente iteración
       }
 
+      // Si el correo no existe, proceder con la inserción
       await pool.request()
         .input("name", sql.NVarChar, prof.name)
         .input("lastName1", sql.NVarChar, prof.lastName1)
         .input("lastName2", sql.NVarChar, prof.lastName2)
         .input("email", sql.NVarChar, prof.email)
-        .input("password", sql.NVarChar, prof.password)
+        .input("password", sql.NVarChar, prof.password)  // Insertar la contraseña encriptada
         .input("rolId", sql.Int, prof.rolId)
         .input("generoId", sql.Int, prof.generoId)
         .input("estado", sql.Bit, 1)
         .query(`INSERT INTO Usuario_TB (Nombre, Apellido1, Apellido2, Correo, Contraseña, Rol_ID_FK, Genero_ID_FK, Estado) 
                 VALUES (@name, @lastName1, @lastName2, @email, @password, @rolId, @generoId, @estado)`);
 
+      console.log('Profesor insertado correctamente:', prof);
+
+      // Agregar solo los nuevos profesores a la lista de nuevosProfesores
       nuevosProfesores.push(prof);
     }
 
-    // === Generar PDF ===
-    const pdfPath = path.join(temp.dir, `Profesores_${uuidv4()}.pdf`);
-    const doc = new PDFDocument({ margin: 50, size: 'A4' });
-    const stream = fs.createWriteStream(pdfPath);
-    doc.pipe(stream);
-
-    doc
-      .font('Helvetica-Bold')
-      .fontSize(18)
-      .text('Listado de Profesores Agregados', { align: 'center' })
-      .moveDown();
-
-    doc
-      .font('Helvetica')
-      .fontSize(12)
-      .text(
-        saltados === 0
-          ? 'Todos los profesores fueron registrados exitosamente.'
-          : `${saltados} profesores fueron omitidos porque sus correos ya estaban registrados.`,
-        { align: 'left' }
-      )
-      .moveDown(1.5);
-
-    if (nuevosProfesores.length === 0) {
-      doc.text('No se agregaron nuevos profesores.', { align: 'center' });
-      doc.end();
-      await new Promise((resolve) => stream.on('finish', resolve));
+    // Generar el PDF solo con los nuevos profesores
+    let pdfPath = '';
+    if (nuevosProfesores.length > 0) {
+      // Si hay nuevos profesores, generar el PDF con los datos de los profesores insertados
+      pdfPath = await generatePDF(nuevosProfesores, saltados);
+      console.log('PDF generado en:', pdfPath);
     } else {
-      const tableData = {
-        headers: [
-          { label: 'Nombre', property: 'name', align: 'left' },
-          { label: 'Apellido 1', property: 'lastName1', align: 'left' },
-          { label: 'Apellido 2', property: 'lastName2', align: 'left' },
-          { label: 'Correo', property: 'email', align: 'left' },
-          { label: 'Contraseña', property: 'generatedPassword', align: 'left' }
-        ],
-        rows: nuevosProfesores.map(prof => ({
-          name: prof.name,
-          lastName1: prof.lastName1,
-          lastName2: prof.lastName2,
-          email: prof.email,
-          generatedPassword: prof.generatedPassword
-        }))
-      };
-
-      await table(doc, tableData, {
-        prepareHeader: () => doc.font('Helvetica-Bold').fontSize(11),
-        prepareRow: () => doc.font('Helvetica').fontSize(10),
-        columnSpacing: 10,
-        padding: 5,
-        width: doc.page.width - doc.page.margins.left - doc.page.margins.right,
-      });
-
-      doc.end();
-      await new Promise((resolve) => stream.on('finish', resolve));
+      // Si todos fueron saltados, generar un PDF vacío
+      pdfPath = await generatePDF([], saltados);
+      console.log('Todos los profesores fueron omitidos, PDF vacío generado.');
     }
 
+    // Leer el archivo PDF y convertirlo a base64
     const pdfBuffer = fs.readFileSync(pdfPath);
     const pdfBase64 = pdfBuffer.toString('base64');
 
+    // Enviar el PDF como respuesta en base64 junto con el mensaje de omisiones
     const mensaje = saltados === profesoresData.length
       ? 'Se omitieron todos los profesores porque ya se encuentran registrados sus correos.'
       : `Se omitieron ${saltados} profesores porque ya se encuentran registrados sus correos.`;
 
-    await GenerarBitacora(req.user.id, "Profesor/es agregados", null);
-
+      await GenerarBitacora(req.user.id, "Profesor/es agregados", null);
     res.json({
       success: true,
       pdfBase64,
       mensaje
     });
 
+    // Eliminar el archivo PDF después de enviarlo
     fs.unlink(pdfPath, (err) => {
       if (err) console.error("Error al eliminar el archivo PDF:", err);
     });
@@ -1081,7 +1057,6 @@ export const agregarProfesor = async (req, res) => {
     res.status(500).json({ mensaje: "Error interno del servidor" });
   }
 };
-
 
 export const desvincularGrupo = async (req, res) => {
   const { profesorId, grupoId } = req.body;
