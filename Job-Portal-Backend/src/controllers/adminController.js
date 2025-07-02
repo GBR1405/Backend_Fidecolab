@@ -957,7 +957,7 @@ export const agregarProfesor = async (req, res) => {
         password: hashedPassword,
         generatedPassword,
         rolId,
-        // generoId: gender  // Eliminado según tu petición
+        generoId: gender  
       });
 
       console.log('Profesores agregados manualmente:', profesoresData);
@@ -980,7 +980,7 @@ export const agregarProfesor = async (req, res) => {
           password: bcrypt.hashSync(generatedPassword, 10),
           generatedPassword,
           rolId,
-          // generoId: prof.gender  // Eliminado
+          generoId: prof.gender  
         };
       });
 
@@ -1008,7 +1008,7 @@ export const agregarProfesor = async (req, res) => {
         .input("email", sql.NVarChar, prof.email)
         .input("password", sql.NVarChar, prof.password)
         .input("rolId", sql.Int, prof.rolId)
-        //.input("generoId", sql.Int, prof.generoId)  // Eliminado
+        .input("generoId", sql.Int, prof.generoId)  
         .input("estado", sql.Bit, 1);
 
       await insertRequest.query(`INSERT INTO Usuario_TB (Nombre, Apellido1, Apellido2, Correo, Contraseña, Rol_ID_FK, Estado) 
