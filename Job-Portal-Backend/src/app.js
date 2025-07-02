@@ -107,6 +107,8 @@ const io = new Server(server, {
 
 // Constantes
 const salas = {};
+const partidaTeams = new Map();
+
 const activeGames = {};
 const puzzleStates = {};
 const partidasConfig = new Map();
@@ -502,6 +504,46 @@ io.on('connection', (socket) => {
     }
   });
 
+  socket.on('GetGroupStructure', async (partidaId, callback) => {
+  try {
+    // ✅ Verifica si ya está en memoria
+    if (partidaTeams.has(partidaId)) {
+      return callback({ success: true, teams: partidaTeams.get(partidaId) });
+    }
+
+    const pool = await poolPromise;
+
+    const result = await pool.request()
+      .input('partidaId', sql.Int, partidaId)
+      .query(`
+        SELECT 
+          u.Usuario_ID_PK AS userId,
+          CONCAT(u.Nombre, ' ', u.Apellido1, ' ', ISNULL(u.Apellido2, '')) AS fullName,
+          p.Equipo_Numero AS team
+        FROM Participantes_TB p
+        INNER JOIN Usuario_TB u ON u.Usuario_ID_PK = p.Usuario_ID_FK
+        WHERE p.Partida_ID_FK = @partidaId
+      `);
+
+    const grouped = result.recordset.reduce((acc, user) => {
+      if (!acc[user.team]) acc[user.team] = [];
+      acc[user.team].push({ userId: user.userId, fullName: user.fullName });
+      return acc;
+    }, {});
+
+    // ✅ Guardar en memoria
+    partidaTeams.set(partidaId, grouped);
+
+    callback({ success: true, teams: grouped });
+
+  } catch (error) {
+    console.error('Error en GetGroupStructure:', error);
+    callback({ success: false, error: 'Error al cargar los grupos' });
+  }
+});
+
+
+
   // Al final del io.on('connection', ...)
   socket.on('finishGame', async (partidaId, callback) => {
   try {
@@ -572,6 +614,8 @@ io.on('connection', (socket) => {
           WHERE Partida_ID_PK = @partidaId;
         `)
     );
+
+    partidaTeams.delete(partidaId);
 
     // 4. Agrupar resultados por equipo
     function agruparResultadosPorEquipo(resultadosArray) {
