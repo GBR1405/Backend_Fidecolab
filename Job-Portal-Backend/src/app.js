@@ -2138,21 +2138,6 @@ socket.on('initPuzzleGame', ({ partidaId, equipoNumero, difficulty, imageUrl }) 
   io.to(`team-${partidaId}-${equipoNumero}`).emit('puzzleGameState', puzzleGames[key]);
 });
 
-socket.on('RequestCurrentGame', (partidaId, callback) => {
-  const gameState = getGameState(partidaId); // Tu función para obtener el estado
-  const currentGame = gameState.juegos[gameState.currentIndex];
-  
-  callback({
-    currentGame: {
-      tipo: currentGame.tipo,
-      dificultad: currentGame.dificultad,
-      configEspecifica: currentGame.configEspecifica
-    },
-    currentIndex: gameState.currentIndex,
-    error: null
-  });
-});
-
 socket.on('selectPuzzlePiece', ({ partidaId, equipoNumero, pieceId, userId }) => {
   const key = `puzzle-${partidaId}-${equipoNumero}`;
   const game = puzzleGames[key];
