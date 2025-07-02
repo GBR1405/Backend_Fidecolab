@@ -80,236 +80,180 @@ export const obtenerGruposVinculados = async (req, res) => {
     }
 };
 
-export const agregarProfesor = async (req, res) => {
+export const agregarEstudiante = async (req, res) => {
   try {
-    const { manual, profesores } = req.body;
-    let profesoresData = [];
-    let saltados = 0;  // Variable para contar los usuarios saltados por duplicidad
-    let nuevosProfesores = [];  // Almacenar solo los profesores nuevos para el PDF
+      console.log("Datos recibidos", req.body);
+      const { manual, estudiantes } = req.body;
+      let estudiantesData = [];
+      let saltados = 0;
+      let nuevosEstudiantes = [];
 
-    // Obtener el ID del rol 'Profesor'
-    const pool = await poolPromise;
-    const rolResult = await pool.request().query(`SELECT Rol_ID_PK FROM Rol_TB WHERE Rol = 'Profesor'`);
+      // Obtener el ID del rol 'Estudiante'
+      const pool = await poolPromise;
+      const rolResult = await pool.request().query(`SELECT Rol_ID_PK FROM Rol_TB WHERE Rol = 'Estudiante'`);
 
-    if (rolResult.recordset.length === 0) {
-      return res.status(400).json({ mensaje: "El rol 'Profesor' no está disponible en la base de datos." });
-    }
-
-    const rolId = rolResult.recordset[0].Rol_ID_PK;
-    console.log('ID del rol de Profesor:', rolId);
-
-    if (manual === "true") {
-      // Carga manual
-      const { name, lastName1, lastName2, email, gender  } = req.body;
-
-      console.log('Datos para carga manual:', { name, lastName1, lastName2, email, gender  });
-
-      if (!name || !lastName1 || !lastName2 || !email || !gender) {
-        return res.status(400).json({ message: 'Todos los campos son obligatorios' });
-    }
-
-      // Generar una contraseña aleatoria y encriptarla
-      const generatedPassword = generatePassword(name);
-      const hashedPassword = await bcrypt.hash(generatedPassword, 10);
-
-      console.log('Contraseña generada:', generatedPassword);
-
-      profesoresData.push({
-        name,
-        lastName1,
-        lastName2,
-        email,
-        password: hashedPassword,  // Usar la contraseña encriptada
-        generatedPassword,  // Contraseña generada (sin encriptar) para el PDF
-        rolId,
-        generoId: gender
-      });
-
-      console.log('Profesores agregados manualmente:', profesoresData);
-
-    } else {
-      // Si ya tienes el JSON de profesores
-      if (!profesores || profesores.length === 0) {
-        return res.status(400).json({ mensaje: "No se han recibido datos de profesores." });
+      if (rolResult.recordset.length === 0) {
+          return res.status(400).json({ mensaje: "El rol 'Estudiante' no está disponible en la base de datos." });
       }
 
-      console.log('Datos recibidos del JSON:', profesores);
+      const rolId = rolResult.recordset[0].Rol_ID_PK;
+      console.log('ID del rol de Estudiante:', rolId);
 
-      profesoresData = profesores.map(prof => {
-        const generatedPassword = generatePassword(prof.name);  // Utilizar 'name' como en el JSON de entrada
-        return {
-          name: prof.name,
-          lastName1: prof.lastName1,
-          lastName2: prof.lastName2,
-          email: prof.email,
-          password: bcrypt.hashSync(generatedPassword, 10),  // Encriptar la contraseña
-          generatedPassword,  // Guardar la contraseña generada para el PDF
-          rolId,
-          generoId: prof.gender  // Usar 'gender' como en el JSON de entrada
-        };
-      });
+      if (manual === "true") {
+          const { name, lastName1, lastName2, email, gender, grupoId } = req.body;
 
-      console.log('Profesores cargados desde el JSON:', profesoresData);
-    }
-
-    // Insertar los profesores en la base de datos
-    for (const prof of profesoresData) {
-      console.log('Insertando profesor:', prof);
-
-      // Verificar si el correo ya existe
-      const existingUser = await pool.request()
-        .input("email", sql.NVarChar, prof.email)
-        .query(`SELECT 1 FROM Usuario_TB WHERE Correo = @email`);
-
-      if (existingUser.recordset.length > 0) {
-        console.log(`El correo ${prof.email} ya existe. Se omite este profesor.`);
-        saltados++;  // Incrementar contador de usuarios saltados
-        continue;  // Saltar a la siguiente iteración
-      }
-
-      // Si el correo no existe, proceder con la inserción
-      await pool.request()
-        .input("name", sql.NVarChar, prof.name)
-        .input("lastName1", sql.NVarChar, prof.lastName1)
-        .input("lastName2", sql.NVarChar, prof.lastName2)
-        .input("email", sql.NVarChar, prof.email)
-        .input("password", sql.NVarChar, prof.password)  // Insertar la contraseña encriptada
-        .input("rolId", sql.Int, prof.rolId)
-        .input("generoId", sql.Int, prof.generoId)
-        .input("estado", sql.Bit, 1)
-        .query(`INSERT INTO Usuario_TB (Nombre, Apellido1, Apellido2, Correo, Contraseña, Rol_ID_FK, Genero_ID_FK, Estado) 
-                VALUES (@name, @lastName1, @lastName2, @email, @password, @rolId, @generoId, @estado)`);
-
-      console.log('Profesor insertado correctamente:', prof);
-
-      // Agregar solo los nuevos profesores a la lista de nuevosProfesores
-      nuevosProfesores.push(prof);
-    }
-
-    // Generar el PDF solo con los nuevos profesores
-    let pdfPath = '';
-    if (nuevosProfesores.length > 0) {
-      // Función para generar el PDF con el formato mejorado
-      const generatePDF = async (profesores, omitidos) => {
-        try {
-          const doc = new PDFDocument({ margin: 30, size: 'A4' });
-          const tempFilePath = path.join(os.tmpdir(), `credenciales_profesores_${Date.now()}.pdf`);
-          const writeStream = fs.createWriteStream(tempFilePath);
-          doc.pipe(writeStream);
-
-          // Configuración de estilos
-          doc.font('Helvetica-Bold').fontSize(18).fillColor('black')
-             .text('Credenciales de Profesores', { align: 'center' });
-          doc.moveDown(0.5);
-
-          if (omitidos > 0) {
-            doc.font('Helvetica').fontSize(12).fillColor('black')
-               .text(`Nota: Se omitieron ${omitidos} profesores porque ya estaban registrados.`, { align: 'center' });
-            doc.moveDown(1);
+          if (!name || !lastName1 || !lastName2 || !email || !gender || !grupoId) {
+              return res.status(400).json({ message: 'Todos los campos son obligatorios' });
           }
 
-          // Encabezados de tabla
-          const headers = ['Nombre', 'Apellidos', 'Correo', 'Contraseña'];
-          const columnWidths = [120, 150, 150, 100];
-          const rowHeight = 30;
-          const initialY = doc.y;
+          const generatedPassword = generatePassword(name);
+          const hashedPassword = await bcrypt.hash(generatedPassword, 10);
 
-          // Dibujar encabezados
-          doc.font('Helvetica-Bold').fontSize(10).fillColor('black');
-          let x = doc.page.margins.left;
-          headers.forEach((header, i) => {
-            doc.text(header, x, initialY, { width: columnWidths[i], align: 'left' });
-            x += columnWidths[i];
+          estudiantesData.push({
+              name,
+              lastName1,
+              lastName2,
+              email,
+              password: hashedPassword,
+              generatedPassword,
+              rolId,
+              generoId: gender,
+              grupoId
           });
 
-          // Dibujar línea bajo encabezados
-          doc.moveTo(doc.page.margins.left, initialY + rowHeight)
-             .lineTo(doc.page.margins.left + columnWidths.reduce((a, b) => a + b, 0), initialY + rowHeight)
-             .stroke();
+      } else {
+          if (!estudiantes || estudiantes.length === 0) {
+              return res.status(400).json({ mensaje: "No se han recibido datos de estudiantes." });
+          }
 
-          // Contenido de la tabla
-          doc.font('Helvetica').fontSize(10).fillColor('black');
-          let currentY = initialY + rowHeight;
-
-          profesores.forEach((profesor, index) => {
-            // Verificar si hay espacio suficiente en la página actual
-            if (currentY + rowHeight > doc.page.height - doc.page.margins.bottom) {
-              doc.addPage();
-              currentY = doc.page.margins.top;
-              
-              // Redibujar encabezados en nueva página
-              doc.font('Helvetica-Bold').fontSize(10).fillColor('black');
-              x = doc.page.margins.left;
-              headers.forEach((header, i) => {
-                doc.text(header, x, currentY, { width: columnWidths[i], align: 'left' });
-                x += columnWidths[i];
-              });
-              currentY += rowHeight;
-              doc.moveTo(doc.page.margins.left, currentY)
-                 .lineTo(doc.page.margins.left + columnWidths.reduce((a, b) => a + b, 0), currentY)
-                 .stroke();
-            }
-
-            // Dibujar fila
-            x = doc.page.margins.left;
-            doc.text(profesor.name, x, currentY, { width: columnWidths[0], align: 'left' });
-            x += columnWidths[0];
-            doc.text(`${profesor.lastName1} ${profesor.lastName2}`, x, currentY, { width: columnWidths[1], align: 'left' });
-            x += columnWidths[1];
-            doc.text(profesor.email, x, currentY, { width: columnWidths[2], align: 'left' });
-            x += columnWidths[2];
-            doc.text(profesor.generatedPassword, x, currentY, { width: columnWidths[3], align: 'left' });
-            
-            // Dibujar línea bajo la fila
-            currentY += rowHeight;
-            doc.moveTo(doc.page.margins.left, currentY)
-               .lineTo(doc.page.margins.left + columnWidths.reduce((a, b) => a + b, 0), currentY)
-               .stroke();
+          estudiantesData = estudiantes.map(est => {
+              const generatedPassword = generatePassword(est.name);
+              return {
+                  name: est.name,
+                  lastName1: est.lastName1,
+                  lastName2: est.lastName2,
+                  email: est.email,
+                  password: bcrypt.hashSync(generatedPassword, 10),
+                  generatedPassword,
+                  rolId,
+                  generoId: est.gender,
+                  grupoId: req.body.grupoId
+              };
           });
+      }
 
-          doc.end();
+      for (const est of estudiantesData) {
+          console.log('Procesando estudiante:', est);
 
-          return new Promise((resolve, reject) => {
-            writeStream.on('finish', () => resolve(tempFilePath));
-            writeStream.on('error', reject);
-          });
-        } catch (error) {
-          console.error('Error al generar PDF:', error);
-          throw error;
-        }
-      };
+          let existingUserResult = await pool.request()
+              .input("email", sql.NVarChar, est.email)
+              .query(`SELECT Usuario_ID_PK FROM Usuario_TB WHERE Correo = @email`);
 
-      pdfPath = await generatePDF(nuevosProfesores, saltados);
-      console.log('PDF generado en:', pdfPath);
-    } else {
-      pdfPath = await generatePDF([], saltados);
-      console.log('Todos los profesores fueron omitidos, PDF vacío generado.');
-    }
+          let usuarioId;
+          if (existingUserResult.recordset.length > 0) {
+              usuarioId = existingUserResult.recordset[0].Usuario_ID_PK;
+              console.log(`El correo ${est.email} ya existe. Verificando su grupo.`);
 
-    // Leer el archivo PDF y convertirlo a base64
-    const pdfBuffer = fs.readFileSync(pdfPath);
-    const pdfBase64 = pdfBuffer.toString('base64');
+              let grupoAsignado = await pool.request()
+                  .input("usuarioId", sql.Int, usuarioId)
+                  .query(`SELECT GrupoCurso_ID_FK FROM GrupoVinculado_TB WHERE Usuario_ID_FK = @usuarioId`);
 
-    // Enviar el PDF como respuesta en base64 junto con el mensaje de omisiones
-    const mensaje = saltados === profesoresData.length
-      ? 'Se omitieron todos los profesores porque ya se encuentran registrados sus correos.'
-      : `Se omitieron ${saltados} profesores porque ya se encuentran registrados sus correos.`;
+              if (grupoAsignado.recordset.length === 0) {
+                  console.log(`El usuario ${est.email} no tiene un grupo asignado. Se asignará el grupo ${est.grupoId}`);
 
-      await GenerarBitacora(req.user.id, "Profesor/es agregados", null);
-    res.json({
-      success: true,
-      pdfBase64,
-      mensaje
-    });
+                  // 🔴 Hacer el SELECT para obtener el GrupoCurso_ID_FK real
+                  let grupoCursoQuery = await pool.request()
+                      .input("gruposEncargadosId", sql.Int, est.grupoId)
+                      .query(`SELECT GrupoCurso_ID_FK FROM GrupoVinculado_TB WHERE GruposEncargados_ID_PK = @gruposEncargadosId`);
 
-    // Eliminar el archivo PDF después de enviarlo
-    fs.unlink(pdfPath, (err) => {
-      if (err) console.error("Error al eliminar el archivo PDF:", err);
-    });
+                  if (grupoCursoQuery.recordset.length === 0) {
+                      return res.status(400).json({ mensaje: "No se encontró un grupo válido para este ID." });
+                  }
+
+                  const grupoCursoId = grupoCursoQuery.recordset[0].GrupoCurso_ID_FK;
+
+                  // 🔵 Insertar con el GrupoCurso_ID_FK real
+                  await pool.request()
+                      .input("usuarioId", sql.Int, usuarioId)
+                      .input("grupoCursoId", sql.Int, grupoCursoId)
+                      .query(`INSERT INTO GrupoVinculado_TB (Usuario_ID_FK, GrupoCurso_ID_FK) VALUES (@usuarioId, @grupoCursoId)`);
+              } else {
+                  console.log(`El usuario ${est.email} ya está vinculado a un grupo. No se realiza ninguna acción.`);
+              }
+
+              saltados++;
+
+          } else {
+              const result = await pool.request()
+                  .input("name", sql.NVarChar, est.name)
+                  .input("lastName1", sql.NVarChar, est.lastName1)
+                  .input("lastName2", sql.NVarChar, est.lastName2)
+                  .input("email", sql.NVarChar, est.email)
+                  .input("password", sql.NVarChar, est.password)
+                  .input("rolId", sql.Int, est.rolId)
+                  .input("generoId", sql.Int, est.generoId)
+                  .input("estado", sql.Bit, 1)
+                  .query(`
+                      INSERT INTO Usuario_TB (Nombre, Apellido1, Apellido2, Correo, Contraseña, Rol_ID_FK, Genero_ID_FK, Estado) 
+                      OUTPUT INSERTED.Usuario_ID_PK
+                      VALUES (@name, @lastName1, @lastName2, @email, @password, @rolId, @generoId, @estado)
+                  `);
+
+              if (result.recordset.length > 0) {
+                  usuarioId = result.recordset[0].Usuario_ID_PK;
+                  console.log('Estudiante insertado correctamente:', est);
+
+                  // 🔴 Hacer el SELECT para obtener el GrupoCurso_ID_FK real
+                  let grupoCursoQuery = await pool.request()
+                      .input("gruposEncargadosId", sql.Int, est.grupoId)
+                      .query(`SELECT GrupoCurso_ID_FK FROM GrupoVinculado_TB WHERE GruposEncargados_ID_PK = @gruposEncargadosId`);
+
+                  if (grupoCursoQuery.recordset.length === 0) {
+                      return res.status(400).json({ mensaje: "No se encontró un grupo válido para este ID." });
+                  }
+
+                  const grupoCursoId = grupoCursoQuery.recordset[0].GrupoCurso_ID_FK;
+
+                  // 🔵 Insertar con el GrupoCurso_ID_FK real
+                  await pool.request()
+                      .input("usuarioId", sql.Int, usuarioId)
+                      .input("grupoCursoId", sql.Int, grupoCursoId)
+                      .query(`INSERT INTO GrupoVinculado_TB (Usuario_ID_FK, GrupoCurso_ID_FK) VALUES (@usuarioId, @grupoCursoId)`);
+
+                  nuevosEstudiantes.push(est);
+              } else {
+                  return res.status(400).json({ mensaje: "No se pudo insertar el nuevo usuario." });
+              }
+          }
+      }
+
+      let pdfPath = '';
+      if (nuevosEstudiantes.length > 0) {
+          pdfPath = await generatePDF(nuevosEstudiantes, saltados);
+      } else {
+          pdfPath = await generatePDF([], saltados);
+      }
+
+      const pdfBuffer = fs.readFileSync(pdfPath);
+      const pdfBase64 = pdfBuffer.toString('base64');
+
+      const mensaje = saltados === estudiantesData.length
+          ? 'Se omitieron el ingreso de estudiantes y se agregaron al grupo aquellos que no estaban vinculados a uno (Si no fueron agregados significa que estan vinculados a un curso, si es asi llamar a administracion para la desvinculacion)'
+          : `Se omitieron ${saltados} estudiantes por estar ya registrados y se agregaron al grupo aquellos que no estaban vinculados a uno`;
+
+      res.json({
+          success: true,
+          pdfBase64,
+          mensaje
+      });
+
+      fs.unlink(pdfPath, (err) => {
+          if (err) console.error("Error al eliminar el archivo PDF:", err);
+      });
 
   } catch (error) {
-    console.error("Error al agregar profesores:", error);
-    res.status(500).json({ mensaje: "Error interno del servidor" });
+      console.error("Error al agregar estudiantes:", error);
+      res.status(500).json({ mensaje: "Error interno del servidor" });
   }
 };
 
