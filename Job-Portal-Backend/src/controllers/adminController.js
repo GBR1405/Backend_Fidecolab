@@ -922,10 +922,9 @@ export const agregarProfesor = async (req, res) => {
   try {
     const { manual, profesores } = req.body;
     let profesoresData = [];
-    let saltados = 0;  // Contador de profesores omitidos
-    let nuevosProfesores = [];  // Solo profesores nuevos para el PDF
+    let saltados = 0;
+    let nuevosProfesores = [];
 
-    // Obtener el ID del rol 'Profesor'
     const pool = await poolPromise;
     const rolResult = await pool.request().query(`SELECT Rol_ID_PK FROM Rol_TB WHERE Rol = 'Profesor'`);
 
@@ -934,13 +933,9 @@ export const agregarProfesor = async (req, res) => {
     }
 
     const rolId = rolResult.recordset[0].Rol_ID_PK;
-    console.log('ID del rol de Profesor:', rolId);
 
     if (manual === "true") {
-      // Carga manual
       const { name, lastName1, lastName2, email, gender } = req.body;
-
-      console.log('Datos para carga manual:', { name, lastName1, lastName2, email, gender });
 
       if (!name || !lastName1 || !lastName2 || !email || !gender) {
         return res.status(400).json({ message: 'Todos los campos son obligatorios' });
@@ -957,18 +952,13 @@ export const agregarProfesor = async (req, res) => {
         password: hashedPassword,
         generatedPassword,
         rolId,
-        generoId: gender  
+        generoId: gender
       });
 
-      console.log('Profesores agregados manualmente:', profesoresData);
-
     } else {
-      // Carga desde JSON
       if (!profesores || profesores.length === 0) {
         return res.status(400).json({ mensaje: "No se han recibido datos de profesores." });
       }
-
-      console.log('Datos recibidos del JSON:', profesores);
 
       profesoresData = profesores.map(prof => {
         const generatedPassword = generatePassword(prof.name);
@@ -980,62 +970,51 @@ export const agregarProfesor = async (req, res) => {
           password: bcrypt.hashSync(generatedPassword, 10),
           generatedPassword,
           rolId,
-          generoId: prof.gender  
+          generoId: prof.gender
         };
       });
-
-      console.log('Profesores cargados desde el JSON:', profesoresData);
     }
 
-    // Insertar profesores en la base de datos
     for (const prof of profesoresData) {
-      console.log('Insertando profesor:', prof);
-
       const existingUser = await pool.request()
         .input("email", sql.NVarChar, prof.email)
         .query(`SELECT 1 FROM Usuario_TB WHERE Correo = @email`);
 
       if (existingUser.recordset.length > 0) {
-        console.log(`El correo ${prof.email} ya existe. Se omite este profesor.`);
         saltados++;
         continue;
       }
 
-      const insertRequest = pool.request()
+      await pool.request()
         .input("name", sql.NVarChar, prof.name)
         .input("lastName1", sql.NVarChar, prof.lastName1)
         .input("lastName2", sql.NVarChar, prof.lastName2)
         .input("email", sql.NVarChar, prof.email)
         .input("password", sql.NVarChar, prof.password)
         .input("rolId", sql.Int, prof.rolId)
-        .input("generoId", sql.Int, prof.generoId)  
-        .input("estado", sql.Bit, 1);
+        .input("generoId", sql.Int, prof.generoId)
+        .input("estado", sql.Bit, 1)
+        .query(`INSERT INTO Usuario_TB (Nombre, Apellido1, Apellido2, Correo, Contraseña, Rol_ID_FK, Genero_ID_FK, Estado) 
+                VALUES (@name, @lastName1, @lastName2, @email, @password, @rolId, @generoId, @estado)`);
 
-      await insertRequest.query(`INSERT INTO Usuario_TB (Nombre, Apellido1, Apellido2, Correo, Contraseña, Rol_ID_FK, Estado) 
-                                VALUES (@name, @lastName1, @lastName2, @email, @password, @rolId, @estado)`);
-
-      console.log('Profesor insertado correctamente:', prof);
       nuevosProfesores.push(prof);
     }
 
-    // -------------------- Generar PDF directamente aquí --------------------
+    // === Generar PDF ===
     const pdfPath = path.join(temp.dir, `Profesores_${uuidv4()}.pdf`);
     const doc = new PDFDocument({ margin: 50, size: 'A4' });
-    const writeStream = fs.createWriteStream(pdfPath);
-    doc.pipe(writeStream);
+    const stream = fs.createWriteStream(pdfPath);
+    doc.pipe(stream);
 
-    // Título principal
     doc
       .font('Helvetica-Bold')
       .fontSize(18)
       .text('Listado de Profesores Agregados', { align: 'center' })
       .moveDown();
 
-    // Mensaje sobre profesores omitidos
     doc
       .font('Helvetica')
       .fontSize(12)
-      .fillColor('black')
       .text(
         saltados === 0
           ? 'Todos los profesores fueron registrados exitosamente.'
@@ -1047,44 +1026,40 @@ export const agregarProfesor = async (req, res) => {
     if (nuevosProfesores.length === 0) {
       doc.text('No se agregaron nuevos profesores.', { align: 'center' });
       doc.end();
-      await new Promise(resolve => writeStream.on('finish', resolve));
+      await new Promise((resolve) => stream.on('finish', resolve));
     } else {
-      // Datos de la tabla sin columna género
       const tableData = {
         headers: [
           { label: 'Nombre', property: 'name', align: 'left' },
           { label: 'Apellido 1', property: 'lastName1', align: 'left' },
           { label: 'Apellido 2', property: 'lastName2', align: 'left' },
           { label: 'Correo', property: 'email', align: 'left' },
-          { label: 'Contraseña', property: 'generatedPassword', align: 'left' },
+          { label: 'Contraseña', property: 'generatedPassword', align: 'left' }
         ],
         rows: nuevosProfesores.map(prof => ({
           name: prof.name,
           lastName1: prof.lastName1,
           lastName2: prof.lastName2,
           email: prof.email,
-          generatedPassword: prof.generatedPassword,
-        })),
+          generatedPassword: prof.generatedPassword
+        }))
       };
 
-      // Agregar tabla con pdfkit-table, permite continuación en varias páginas
-      await doc.table(tableData, {
+      await table(doc, tableData, {
         prepareHeader: () => doc.font('Helvetica-Bold').fontSize(11),
-        prepareRow: (row, i) => doc.font('Helvetica').fontSize(10),
+        prepareRow: () => doc.font('Helvetica').fontSize(10),
         columnSpacing: 10,
         padding: 5,
         width: doc.page.width - doc.page.margins.left - doc.page.margins.right,
       });
 
       doc.end();
-      await new Promise(resolve => writeStream.on('finish', resolve));
+      await new Promise((resolve) => stream.on('finish', resolve));
     }
 
-    // Leer PDF y convertir a base64
     const pdfBuffer = fs.readFileSync(pdfPath);
     const pdfBase64 = pdfBuffer.toString('base64');
 
-    // Enviar respuesta
     const mensaje = saltados === profesoresData.length
       ? 'Se omitieron todos los profesores porque ya se encuentran registrados sus correos.'
       : `Se omitieron ${saltados} profesores porque ya se encuentran registrados sus correos.`;
@@ -1097,8 +1072,7 @@ export const agregarProfesor = async (req, res) => {
       mensaje
     });
 
-    // Eliminar archivo PDF temporal
-    fs.unlink(pdfPath, err => {
+    fs.unlink(pdfPath, (err) => {
       if (err) console.error("Error al eliminar el archivo PDF:", err);
     });
 
@@ -1107,6 +1081,7 @@ export const agregarProfesor = async (req, res) => {
     res.status(500).json({ mensaje: "Error interno del servidor" });
   }
 };
+
 
 export const desvincularGrupo = async (req, res) => {
   const { profesorId, grupoId } = req.body;
