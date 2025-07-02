@@ -2003,6 +2003,27 @@ socket.on('connection', (socket) => {
   });
 });
 
+socket.on('getTeamsForPartida', async (partidaId, callback) => {
+  try {
+    const pool = await poolPromise;
+    const query = `
+      SELECT DISTINCT Equipo_Numero
+      FROM Participantes_TB
+      WHERE Partida_ID_FK = @partidaId;
+    `;
+    const result = await pool.request()
+      .input('partidaId', sql.Int, partidaId)
+      .query(query);
+
+    const equipos = result.recordset.map(r => r.Equipo_Numero).sort((a, b) => a - b);
+    callback({ success: true, equipos });
+  } catch (error) {
+    console.error('Error al obtener equipos:', error);
+    callback({ success: false, error: 'Error al obtener equipos' });
+  }
+});
+
+
 socket.on('getCurrentDrawing', (partidaId, callback) => {
   const currentTeam = activeDemos[partidaId];
   if (!currentTeam) {
