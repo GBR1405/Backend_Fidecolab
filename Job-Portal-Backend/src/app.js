@@ -1206,6 +1206,8 @@ socket.on('nextGame', async (partidaId, callback) => {
 // Inicializar juego de memoria
 socket.on('initMemoryGame', async ({ partidaId, equipoNumero }) => {
   try {
+    const config = global.partidasConfig?.[partidaId];
+
     // 1. Verificar existencia de partida
     const partidaConfig = global.partidasConfig[partidaId];
     if (!partidaConfig) throw new Error('Configuración de partida no encontrada');
@@ -1291,6 +1293,8 @@ function getPairsCount(difficulty) {
 // Voltear una carta
 socket.on('flipMemoryCard', ({ partidaId, equipoNumero, cardId }) => {
   try {
+    const config = global.partidasConfig?.[partidaId];
+
     const partidaConfig = global.partidasConfig[partidaId];
     if (!partidaConfig) throw new Error('Configuración de partida no encontrada');
     
@@ -1542,6 +1546,7 @@ socket.on('initHangmanGame', ({ partidaId, equipoNumero }) => {
 // Evento para adivinar letra
 socket.on('guessLetter', ({ partidaId, equipoNumero, letra }) => {
   try {
+    const config = global.partidasConfig?.[partidaId];
     const gameId = `hangman-${partidaId}-${equipoNumero}`;
     const game = hangmanGames[gameId];
     
@@ -1632,6 +1637,8 @@ socket.on('guessLetter', ({ partidaId, equipoNumero, letra }) => {
 // Inicializar juego de dibujo
 socket.on('initDrawingGame', ({ partidaId, equipoNumero, userId }) => {
   const gameId = `drawing-${partidaId}-${equipoNumero}`;
+  const config = global.partidasConfig?.[partidaId];
+
 
   // Unir al socket a la sala de su equipo
   socket.join(`team-${partidaId}-${equipoNumero}`);
@@ -2142,6 +2149,8 @@ function getAllTeamProgress(partidaId) {
 // ROMPECABEZAS NUEVO 2.0 -----------------------
 
 socket.on('initPuzzleGame', ({ partidaId, equipoNumero, difficulty, imageUrl }) => {
+  const config = global.partidasConfig?.[partidaId];
+
   const dif = difficulty.toLowerCase();
   const sizeMap = { 'Fácil': 6, 'Normal': 7, 'Difícil': 8 };
   const size = sizeMap[dif] || 6;
@@ -2195,6 +2204,8 @@ socket.on('initPuzzleGame', ({ partidaId, equipoNumero, difficulty, imageUrl }) 
 });
 
 socket.on('selectPuzzlePiece', ({ partidaId, equipoNumero, pieceId, userId }) => {
+  const config = global.partidasConfig?.[partidaId];
+
   const key = `puzzle-${partidaId}-${equipoNumero}`;
   const game = puzzleGames[key];
   if (!game) return;
