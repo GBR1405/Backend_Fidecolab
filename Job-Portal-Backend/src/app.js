@@ -137,6 +137,7 @@ const drawingStates = {};
 const tintaStates = {};
 
 const gameTeamTimestamps = {};
+const resultadosPorEquipo = {};
 
 const PUZZLE_CONFIG = {
   'Fácil': { size: 3, pieceSize: 150 },
