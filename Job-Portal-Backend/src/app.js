@@ -2896,6 +2896,58 @@ async function evaluarLogrosGrupales(partidaId) {
   }
 }
 
+async function guardarResultadosFinalesEnBD(partidaId) {
+  try {
+    const pool = await poolPromise;
+    const partida = partidasEnCurso.get(partidaId);
+    const resultados = resultadosPorEquipo[partidaId];
+    const equipos = partida?.equipos;
+
+    if (!partida || !equipos || !resultados || resultados.length === 0) {
+      console.warn(`[RESULTADOS] No hay datos para partida ${partidaId}`);
+      return;
+    }
+
+    for (const [equipoStr, miembros] of Object.entries(equipos)) {
+      const equipo = parseInt(equipoStr);
+
+      const juegosEquipo = resultados.map(juego => {
+        const datos = juego.resultados?.[equipo];
+        if (!datos) return null;
+
+        const resultadoLimpio = {
+          tipoJuego: juego.tipoJuego,
+          comentario: datos.comentario || "",
+          progreso: datos.progreso || { actual: 0, total: 0 },
+          tiempo: datos.tiempo || 0
+        };
+
+        return resultadoLimpio;
+      }).filter(j => j); // quitar nulls
+
+      await pool.request()
+        .input('partidaId', sql.Int, partidaId)
+        .input('equipo', sql.Int, equipo)
+        .input('jsonResultados', sql.NVarChar(sql.MAX), JSON.stringify(juegosEquipo))
+        .input('comentario', sql.NVarChar(200), '')
+        .query(`
+          INSERT INTO Resultados_TB (Partida_ID_FK, Equipo, Resultados, Comentario)
+          VALUES (@partidaId, @equipo, @jsonResultados, @comentario)
+        `);
+    }
+
+    console.log(`[RESULTADOS] Guardados resultados en BD para partida ${partidaId}`);
+    
+    // Ahora sí generamos los logros
+    await evaluarLogrosGrupales(partidaId);
+    await evaluarLogrosPersonales(partidaId);
+
+  } catch (error) {
+    console.error(`[ERROR][guardarResultadosFinalesEnBD]`, error);
+  }
+}
+
+
 
 //-----------------------------------------------------------
 
