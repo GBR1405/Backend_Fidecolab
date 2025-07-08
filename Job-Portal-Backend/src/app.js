@@ -138,6 +138,7 @@ const tintaStates = {};
 
 const gameTeamTimestamps = {};
 const resultadosPorEquipo = {};
+const partidasEnCurso = new Map();
 
 const PUZZLE_CONFIG = {
   'Fácil': { size: 3, pieceSize: 150 },
@@ -2899,7 +2900,7 @@ async function evaluarLogrosGrupales(partidaId) {
 async function guardarResultadosFinalesEnBD(partidaId) {
   try {
     const pool = await poolPromise;
-    const partida = partidasEnCurso.get(partidaId);
+    const partida = global.partidasConfig?.[partidaId];
     const resultados = resultadosPorEquipo[partidaId];
     const equipos = partida?.equipos;
 
