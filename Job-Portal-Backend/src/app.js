@@ -163,6 +163,16 @@ const GAME_TIMES = {
 
 //Funciones extras
 
+function parsearProgreso(p) {
+  if (typeof p === 'string' && p.includes('/')) {
+    const [actual, total] = p.split('/').map(Number);
+    if (!isNaN(actual) && !isNaN(total)) return { actual, total };
+  } else if (typeof p === 'string' && p.endsWith('%')) {
+    const actual = parseInt(p);
+    return { actual, total: 100 };
+  }
+  return { actual: 0, total: 0 };
+}
 
 
 // Función para calcular el progreso del rompecabezas
@@ -549,50 +559,56 @@ io.on('connection', (socket) => {
   try {
     console.log(`[INFO] Finalizando partida ${partidaId}`);
     const config = global.partidasConfig[partidaId];
-    if (!config) {
-      return callback({ error: "Partida no encontrada" });
-    }
+    if (!config) return callback({ error: "Partida no encontrada" });
 
     const juegos = config.juegos;
     const currentIndex = config.currentIndex;
 
-    // 1. Generar resultados de TODOS los juegos jugados
-    gameResults[partidaId] = [];
+    resultadosPorEquipo[partidaId] = [];
 
+    // 1. Generar resultados de todos los juegos completados hasta ahora
     for (let i = 0; i <= currentIndex; i++) {
-      config.currentIndex = i; // Forzamos índice actual
-      const resultadosParciales = await generarResultadosJuegoActual(partidaId);
-      gameResults[partidaId].push(...resultadosParciales);
+      config.currentIndex = i;
+      const resultadosParciales = await generarResultadosJuegoActualFinal(partidaId);
+      resultadosPorEquipo[partidaId].push({
+        tipoJuego: resultadosParciales[0]?.tipoJuego || 'Desconocido',
+        resultados: Object.fromEntries(resultadosParciales.map(r => [
+          r.equipoNumero,
+          {
+            progreso: parsearProgreso(r.progreso),
+            tiempo: r.tiempo,
+            comentario: r.comentario,
+            OrdenCompletado: r.OrdenCompletado
+          }
+        ]))
+      });
     }
 
-    // 2. Detectar si la partida se terminó anticipadamente
+    // 2. Detectar si la partida se terminó anticipadamente y completar con "cancelado"
     const finalizacionAnticipada = currentIndex < juegos.length - 1;
-
     if (finalizacionAnticipada) {
       const pool = await poolPromise;
       const equiposQuery = await pool.request()
         .input('partidaId', sql.Int, partidaId)
-        .query(`
-          SELECT DISTINCT Equipo_Numero FROM Participantes_TB 
-          WHERE Partida_ID_FK = @partidaId
-        `);
-  
+        .query(`SELECT DISTINCT Equipo_Numero FROM Participantes_TB WHERE Partida_ID_FK = @partidaId`);
+
       const totalEquipos = equiposQuery.recordset.map(row => row.Equipo_Numero);
 
       for (let i = currentIndex + 1; i < juegos.length; i++) {
         const juego = juegos[i];
-        for (const equipoNumero of totalEquipos) {
-          gameResults[partidaId].push({
-            partidaId,
-            equipoNumero,
-            juegoNumero: juego.Orden,
-            tipoJuego: juego.tipo,
-            tiempo: "N/A",
-            progreso: "N/A",
-            tema: juego.tema || "N/A",
-            comentario: "Juego Cancelado"
-          });
+        const resultadoCancelado = {};
+        for (const equipo of totalEquipos) {
+          resultadoCancelado[equipo] = {
+            progreso: { actual: 0, total: 0 },
+            tiempo: 0,
+            comentario: "Juego Cancelado",
+            OrdenCompletado: null
+          };
         }
+        resultadosPorEquipo[partidaId].push({
+          tipoJuego: juego.tipo,
+          resultados: resultadoCancelado
+        });
       }
 
       console.log(`[INFO] Partida ${partidaId} finalizada anticipadamente.`);
@@ -600,10 +616,9 @@ io.on('connection', (socket) => {
       console.log(`[INFO] Partida ${partidaId} finalizada normalmente.`);
     }
 
+    // 3. Marcar la partida como finalizada
     const now = new Date();
-
-    // 3. Marcar la partida como finalizada en la base de datos
-    await poolPromise.then(pool => 
+    await poolPromise.then(pool =>
       pool.request()
         .input('partidaId', sql.Int, partidaId)
         .input('fechaFin', sql.DateTime, now)
@@ -615,54 +630,12 @@ io.on('connection', (socket) => {
         `)
     );
 
-    partidaTeams.delete(partidaId);
-
-    // 4. Agrupar resultados por equipo
-    function agruparResultadosPorEquipo(resultadosArray) {
-      const porEquipo = {};
-      for (const resultado of resultadosArray) {
-        const equipo = resultado.equipoNumero;
-        if (!porEquipo[equipo]) {
-          porEquipo[equipo] = {
-            partidaId: resultado.partidaId,
-            equipo,
-            juegos: []
-          };
-        }
-        porEquipo[equipo].juegos.push({
-          juegoNumero: resultado.juegoNumero,
-          tipoJuego: resultado.tipoJuego,
-          tiempo: resultado.tiempo,
-          progreso: resultado.progreso,
-          tema: resultado.tema,
-          comentario: resultado.comentario
-        });
-      }
-      return Object.values(porEquipo);
-    }
-
-    const resultadosFinales = gameResults[partidaId] || [];
-    const resultadosPorEquipo = agruparResultadosPorEquipo(resultadosFinales);
-
-    const pool = await poolPromise;
-    for (const equipo of resultadosPorEquipo) {
-      const jsonResultados = JSON.stringify(equipo.juegos);
-
-      await pool.request()
-        .input('Equipo', sql.Int, equipo.equipo)
-        .input('Partida_ID_FK', sql.Int, equipo.partidaId)
-        .input('Resultados', sql.NVarChar(sql.MAX), jsonResultados)
-        .input('Comentario', sql.VarChar(200), '')
-        .query(`
-          INSERT INTO Resultados_TB (Equipo, Partida_ID_FK, Resultados, Comentario)
-          VALUES (@Equipo, @Partida_ID_FK, @Resultados, @Comentario)
-        `);
-    }
-
-    console.log(`[BD] Resultados insertados para ${resultadosPorEquipo.length} equipos`);
+    // 4. Guardar en BD y generar logros
+    await guardarResultadosFinalesEnBD(partidaId);
 
     // 5. Limpiar memoria
-    delete gameResults[partidaId];
+    partidaTeams.delete(partidaId);
+    delete resultadosPorEquipo[partidaId];
     delete gameTeamTimestamps[partidaId];
     delete global.partidasConfig[partidaId];
 
@@ -674,19 +647,18 @@ io.on('connection', (socket) => {
       });
     });
 
-    // 6. Notificar a todos y devolver confirmación
+    // 6. Notificar y responder
     io.to(`partida_${partidaId}`).emit('gameFinished', { partidaId });
     callback({ success: true });
 
-    // 7. Debug de resultados
-    console.log("[RESULTADOS FINALES]");
-    console.table(resultadosFinales);
-
+    // 7. Debug
+    console.log(`[RESULTADOS][${partidaId}] Juego terminado y resultados generados.`);
   } catch (error) {
     console.error('Error al finalizar la partida:', error);
     callback({ error: error.message });
   }
 });
+
 
   // Salir de una sala
   socket.on('disconnect', () => {
@@ -1153,7 +1125,19 @@ socket.on('nextGame', async (partidaId, callback) => {
       return callback({ error: "Configuración no encontrada" });
     }
 
-    await generarResultadosJuegoActual(partidaId);
+    const resultados = await generarResultadosJuegoActualFinal(partidaId);
+      if (!resultadosPorEquipo[partidaId]) resultadosPorEquipo[partidaId] = [];
+
+      resultadosPorEquipo[partidaId].push({
+        tipoJuego: resultados[0]?.tipoJuego || 'Desconocido',
+        resultados: Object.fromEntries(resultados.map(r => [r.equipoNumero, {
+          progreso: parsearProgreso(r.progreso),
+          tiempo: r.tiempo,
+          comentario: r.comentario,
+          OrdenCompletado: r.OrdenCompletado
+        }]))
+      });
+
 
     io.to(`partida_${partidaId}`).emit('cleanPreviousGames', { partidaId });
 
@@ -1241,9 +1225,18 @@ socket.on('initMemoryGame', async ({ partidaId, equipoNumero }) => {
       return;
     }
 
-    if (!gameTeamTimestamps[partidaId]) gameTeamTimestamps[partidaId] = {};
-    if (!gameTeamTimestamps[partidaId][equipoNumero]) {
-      gameTeamTimestamps[partidaId][equipoNumero] = {
+    const juegoId = config.currentIndex; // o juego.Orden si usás Orden para identificar
+
+    if (!gameTeamTimestamps[partidaId]) {
+      gameTeamTimestamps[partidaId] = {};
+    }
+
+    if (!gameTeamTimestamps[partidaId][juegoId]) {
+      gameTeamTimestamps[partidaId][juegoId] = {};
+    }
+
+    if (!gameTeamTimestamps[partidaId][juegoId][equipoNumero]) {
+      gameTeamTimestamps[partidaId][juegoId][equipoNumero] = {
         startedAt: new Date(),
         completedAt: null
       };
@@ -1350,9 +1343,13 @@ socket.on('flipMemoryCard', ({ partidaId, equipoNumero, cardId }) => {
           if (game.state.matchedPairs === game.config.pairsCount) {
             game.state.gameCompleted = true;
 
-            if (gameTeamTimestamps?.[partidaId]?.[equipoNumero]) {
-              gameTeamTimestamps[partidaId][equipoNumero].completedAt = new Date();
-            }
+            const juegoId = config.currentIndex; // O usar game.Orden si eso está disponible
+
+              if (
+                gameTeamTimestamps?.[partidaId]?.[juegoId]?.[equipoNumero]
+              ) {
+                gameTeamTimestamps[partidaId][juegoId][equipoNumero].completedAt = new Date();
+              }
 
             io.to(`team-${partidaId}-${equipoNumero}`).emit('memoryGameState', {
               ...game,
@@ -1513,13 +1510,23 @@ socket.on('initHangmanGame', ({ partidaId, equipoNumero }) => {
       }
     };
 
-    if (!gameTeamTimestamps[partidaId]) gameTeamTimestamps[partidaId] = {};
-    if (!gameTeamTimestamps[partidaId][equipoNumero]) {
-      gameTeamTimestamps[partidaId][equipoNumero] = {
+    const juegoId = config.currentIndex; // o juego.Orden si usás Orden para identificar
+
+    if (!gameTeamTimestamps[partidaId]) {
+      gameTeamTimestamps[partidaId] = {};
+    }
+
+    if (!gameTeamTimestamps[partidaId][juegoId]) {
+      gameTeamTimestamps[partidaId][juegoId] = {};
+    }
+
+    if (!gameTeamTimestamps[partidaId][juegoId][equipoNumero]) {
+      gameTeamTimestamps[partidaId][juegoId][equipoNumero] = {
         startedAt: new Date(),
         completedAt: null
       };
     }
+
 
     // Enviar estado inicial
     io.to(`team-${partidaId}-${equipoNumero}`).emit('hangmanGameState', hangmanGames[gameId]);
@@ -1575,9 +1582,13 @@ socket.on('guessLetter', ({ partidaId, equipoNumero, letra }) => {
         game.state.juegoTerminado = true;
         game.state.ganado = true;
 
-        if (!gameTeamTimestamps[partidaId]?.[equipoNumero]?.completedAt) {
-          gameTeamTimestamps[partidaId][equipoNumero].completedAt = new Date();
-        }
+        const juegoId = config.currentIndex; // O usar game.Orden si eso está disponible
+
+          if (
+            gameTeamTimestamps?.[partidaId]?.[juegoId]?.[equipoNumero]
+          ) {
+            gameTeamTimestamps[partidaId][juegoId][equipoNumero].completedAt = new Date();
+          }
       }
     } else {
       game.state.intentosRestantes--;
@@ -1587,8 +1598,12 @@ socket.on('guessLetter', ({ partidaId, equipoNumero, letra }) => {
         game.state.juegoTerminado = true;
         game.state.ganado = false;
 
-        if (!gameTeamTimestamps[partidaId]?.[equipoNumero]?.completedAt) {
-          gameTeamTimestamps[partidaId][equipoNumero].completedAt = new Date();
+        const juegoId = config.currentIndex; // O usar game.Orden si eso está disponible
+
+        if (
+          gameTeamTimestamps?.[partidaId]?.[juegoId]?.[equipoNumero]
+        ) {
+          gameTeamTimestamps[partidaId][juegoId][equipoNumero].completedAt = new Date();
         }
 
       }
@@ -1628,13 +1643,23 @@ socket.on('initDrawingGame', ({ partidaId, equipoNumero, userId }) => {
     };
   }
 
-  if (!gameTeamTimestamps[partidaId]) gameTeamTimestamps[partidaId] = {};
-  if (!gameTeamTimestamps[partidaId][equipoNumero]) {
-    gameTeamTimestamps[partidaId][equipoNumero] = {
-      startedAt: new Date(),
-      completedAt: null
-    };
-  }
+  const juegoId = config.currentIndex; // o juego.Orden si usás Orden para identificar
+
+    if (!gameTeamTimestamps[partidaId]) {
+      gameTeamTimestamps[partidaId] = {};
+    }
+
+    if (!gameTeamTimestamps[partidaId][juegoId]) {
+      gameTeamTimestamps[partidaId][juegoId] = {};
+    }
+
+    if (!gameTeamTimestamps[partidaId][juegoId][equipoNumero]) {
+      gameTeamTimestamps[partidaId][juegoId][equipoNumero] = {
+        startedAt: new Date(),
+        completedAt: null
+      };
+    }
+
 
   // Inicializar tinta si no existe
   if (drawingGames[gameId].tintaStates[userId] === undefined) {
@@ -2130,13 +2155,23 @@ socket.on('initPuzzleGame', ({ partidaId, equipoNumero, difficulty, imageUrl }) 
     return;
   }
 
-  if (!gameTeamTimestamps[partidaId]) gameTeamTimestamps[partidaId] = {};
-    if (!gameTeamTimestamps[partidaId][equipoNumero]) {
-      gameTeamTimestamps[partidaId][equipoNumero] = {
+  const juegoId = config.currentIndex; // o juego.Orden si usás Orden para identificar
+
+    if (!gameTeamTimestamps[partidaId]) {
+      gameTeamTimestamps[partidaId] = {};
+    }
+
+    if (!gameTeamTimestamps[partidaId][juegoId]) {
+      gameTeamTimestamps[partidaId][juegoId] = {};
+    }
+
+    if (!gameTeamTimestamps[partidaId][juegoId][equipoNumero]) {
+      gameTeamTimestamps[partidaId][juegoId][equipoNumero] = {
         startedAt: new Date(),
         completedAt: null
       };
     }
+
 
   // Generar piezas revueltas con semilla
   const seed = `${partidaId}-${equipoNumero}`;
@@ -2189,9 +2224,14 @@ socket.on('selectPuzzlePiece', ({ partidaId, equipoNumero, pieceId, userId }) =>
       // Calcular progreso
       game.state.progress = calculatePuzzleProgress(game.state.pieces);
 
-      if (game.state.progress === 100 && !gameTeamTimestamps[partidaId]?.[equipoNumero]?.completedAt) {
-        gameTeamTimestamps[partidaId][equipoNumero].completedAt = new Date();
+      const juegoId = config.currentIndex; // O usar game.Orden si eso está disponible
+
+      if (
+        gameTeamTimestamps?.[partidaId]?.[juegoId]?.[equipoNumero]
+      ) {
+        gameTeamTimestamps[partidaId][juegoId][equipoNumero].completedAt = new Date();
       }
+
 
     }
 
@@ -2428,6 +2468,420 @@ async function generarResultadosJuegoActual(partidaId) {
   console.table(resultados);
 
   return resultados;
+}
+
+async function evaluarLogrosPersonales(partidaId) {
+  try {
+    const pool = await poolPromise;
+
+    const equipos = partidaTeams.get(partidaId);
+    if (!equipos) return;
+
+    const participantes = Object.values(equipos).flat(); // [{ userId, fullName }]
+
+    for (const { userId } of participantes) {
+      // 1. Obtener resultados anteriores del usuario
+      const resultadosPorUsuario = await pool.request()
+        .input('userId', sql.Int, userId)
+        .query(`
+          SELECT r.Resultados, r.Partida_ID_FK
+          FROM Resultados_TB r
+          INNER JOIN Participantes_TB p ON p.Equipo_Numero = r.Equipo
+            AND p.Partida_ID_FK = r.Partida_ID_FK
+          WHERE p.Usuario_ID_FK = @userId
+        `);
+
+      const conteoJuegos = {
+        'Rompecabezas': 0,
+        'Memoria': 0,
+        'Ahorcado': 0,
+        'Dibujo': 0
+      };
+
+      const partidasCompletas = new Set();
+
+      for (const row of resultadosPorUsuario.recordset) {
+        let juegos;
+        try {
+          juegos = JSON.parse(row.Resultados || '[]');
+        } catch {
+          juegos = [];
+        }
+
+        let completados = 0;
+        for (const juego of juegos) {
+          const comentario = juego.comentario?.toLowerCase() || '';
+          if (comentario.includes('Juego Cancelado') || comentario.includes('Juego No Participado')) continue;
+
+          if (juego.tipoJuego && conteoJuegos[juego.tipoJuego] !== undefined) {
+            conteoJuegos[juego.tipoJuego]++;
+          }
+
+          completados++;
+        }
+
+        if (juegos.length > 0 && completados === juegos.length) {
+          partidasCompletas.add(row.Partida_ID_FK);
+        }
+      }
+
+      // 2. Obtener logros ya obtenidos
+      const logrosUsuarioQuery = await pool.request()
+        .input('userId', sql.Int, userId)
+        .query(`SELECT l.Nombre FROM Usuario_Logros_TB ul INNER JOIN Logros_TB l ON l.Logro_ID_PK = ul.Logro_ID_FK WHERE ul.Usuario_ID_FK = @userId`);
+      
+      const logrosExistentes = new Set(logrosUsuarioQuery.recordset.map(r => r.Nombre));
+
+      // 3. Determinar nuevos logros
+      const logrosAAsignar = [];
+
+      const agregarLogroSiNoTiene = nombre => {
+        if (!logrosExistentes.has(nombre)) {
+          logrosAAsignar.push(nombre);
+        }
+      };
+
+      agregarLogroSiNoTiene("Gracias por jugar");
+
+      if (conteoJuegos['Dibujo'] >= 1) agregarLogroSiNoTiene("Diseñador");
+      if (conteoJuegos['Memoria'] >= 1) agregarLogroSiNoTiene("Localizador de parejas");
+      if (conteoJuegos['Rompecabezas'] >= 1) agregarLogroSiNoTiene("Localizador de detalles pequeños");
+      if (conteoJuegos['Ahorcado'] >= 1) agregarLogroSiNoTiene("Adivinador");
+
+      const niveles = [
+        { cantidad: 3, sufijo: " - Nivel 2" },
+        { cantidad: 7, sufijo: " - Nivel 3" },
+        { cantidad: 10, sufijo: " - Nivel 4" }
+      ];
+
+      for (const tipo in conteoJuegos) {
+        const base = {
+          'Dibujo': "Diseñador",
+          'Memoria': "Localizador de parejas",
+          'Rompecabezas': "Localizador de detalles pequeños",
+          'Ahorcado': "Adivinador"
+        }[tipo];
+
+        niveles.forEach(n => {
+          if (conteoJuegos[tipo] >= n.cantidad) {
+            agregarLogroSiNoTiene(base + n.sufijo);
+          }
+        });
+      }
+
+      const totalPartidas = partidasCompletas.size;
+      if (totalPartidas >= 1) agregarLogroSiNoTiene("Jugador de partidas");
+      if (totalPartidas >= 3) agregarLogroSiNoTiene("Jugador de partidas - Nivel 2");
+      if (totalPartidas >= 7) agregarLogroSiNoTiene("Jugador de partidas - Nivel 3");
+      if (totalPartidas >= 10) agregarLogroSiNoTiene("Jugador de partidas - Nivel 4");
+
+      if (logrosAAsignar.length >= 5) agregarLogroSiNoTiene("Cazador de logros");
+
+      console.log(`[LOGRO TEST] Logros para ${userId}`, logrosAAsignar);
+
+      // 4. Insertar logros nuevos
+      for (const nombre of logrosAAsignar) {
+        const logroQuery = await pool.request()
+          .input('nombre', sql.NVarChar(100), nombre)
+          .query(`SELECT Logro_ID_PK FROM Logros_TB WHERE Nombre = @nombre`);
+
+        if (logroQuery.recordset.length === 0) continue;
+        const logroId = logroQuery.recordset[0].Logro_ID_PK;
+
+        await pool.request()
+          .input('userId', sql.Int, userId)
+          .input('logroId', sql.Int, logroId)
+          .input('partidaId', sql.Int, partidaId)
+          .query(`
+            IF NOT EXISTS (
+              SELECT 1 FROM Usuario_Logros_TB 
+              WHERE Usuario_ID_FK = @userId AND Logro_ID_FK = @logroId
+            )
+            INSERT INTO Usuario_Logros_TB (Usuario_ID_FK, Logro_ID_FK, Partida_ID_FK)
+            VALUES (@userId, @logroId, @partidaId)
+          `);
+      }
+
+      console.log(`[LOGROS][${userId}] Asignados:`, logrosAAsignar);
+    }
+
+  } catch (error) {
+    console.error('Error al evaluar logros personales:', error);
+  }
+}
+
+async function generarResultadosJuegoActualFinal(partidaId) {
+  const config = global.partidasConfig[partidaId];
+  if (!config) return [];
+
+  const juegoActual = config.juegos[config.currentIndex];
+  const tipo = juegoActual.tipo;
+  const orden = juegoActual.Orden;
+  const tema = juegoActual.tema || 'N/A';
+
+  const pool = await poolPromise;
+  const equiposQuery = await pool.request()
+    .input('partidaId', sql.Int, partidaId)
+    .query(`
+      SELECT DISTINCT Equipo_Numero FROM Participantes_TB 
+      WHERE Partida_ID_FK = @partidaId
+    `);
+
+  const totalEquipos = equiposQuery.recordset.map(row => row.Equipo_Numero);
+
+  const timestamps = gameTeamTimestamps?.[partidaId] || {};
+  const inicioJuego = timestamps?.inicio || Date.now();
+
+  // Calcular orden completado
+  const finalizaciones = totalEquipos
+    .map(equipo => {
+      const t = timestamps[equipo];
+      return t?.completedAt ? {
+        equipo,
+        completedAt: new Date(t.completedAt)
+      } : null;
+    })
+    .filter(Boolean)
+    .sort((a, b) => a.completedAt - b.completedAt);
+
+  const ordenCompletado = {};
+  finalizaciones.forEach((entry, index) => {
+    ordenCompletado[entry.equipo] = index + 1;
+  });
+
+  const resultados = [];
+
+  for (const equipoNumero of totalEquipos) {
+    let tiempo = 0;
+    let progreso = '';
+    let comentario = '';
+    let imagenBase64 = null;
+
+    // Tiempo jugado
+    const juegoId = config.currentIndex; // o juego.Orden
+    const started = gameTeamTimestamps?.[partidaId]?.[juegoId]?.[equipoNumero]?.startedAt;
+    const ended = gameTeamTimestamps?.[partidaId]?.[juegoId]?.[equipoNumero]?.completedAt;
+
+    if (!started) {
+      comentario = "Juego no iniciado";
+      progreso = "N/A";
+      tiempo = 0;
+    } else {
+      if (!ended && tipo === 'Dibujo') {
+        ended = new Date();
+        gameTeamTimestamps[partidaId][juegoId][equipoNumero].completedAt = ended;
+      }
+
+      const diffSeconds = ended
+        ? Math.floor((new Date(ended) - new Date(started)) / 1000)
+        : Math.floor((Date.now() - new Date(started)) / 1000);
+      tiempo = diffSeconds;
+    }
+
+    switch (tipo) {
+      case 'Ahorcado': {
+        const key = `hangman-${partidaId}-${equipoNumero}`;
+        const game = hangmanGames[key];
+        if (game) {
+          const intentos = game.state.letrasIntentadas.length;
+          const acertadas = game.state.letrasAdivinadas.length;
+          const fallos = intentos - acertadas;
+          progreso = `${intentos}/${fallos}`;
+        } else {
+          progreso = "N/A";
+          comentario = "Juego No Participado";
+        }
+        break;
+      }
+
+      case 'Dibujo': {
+        const key = `drawing-${partidaId}-${equipoNumero}`;
+        const game = drawingGames[key];
+        imagenBase64 = game?.imageData || null;
+
+        if (!imagenBase64 && game?.actions && Object.keys(game.actions).length > 0) {
+          imagenBase64 = await renderDrawingToBase64(partidaId, equipoNumero);
+        }
+
+        if (imagenBase64) {
+          progreso = '[Imagen en Base64]';
+          comentario = imagenBase64; // la guardamos en comentario
+        } else {
+          progreso = "N/A";
+          comentario = "Juego No Participado";
+        }
+        break;
+      }
+
+      case 'Memoria': {
+        const key = `memory-${partidaId}-${equipoNumero}-${config.currentIndex}`;
+        const game = memoryGames[key];
+        if (game) {
+          const matched = game.state.matchedPairs;
+          const total = game.config.pairsCount;
+          progreso = `${matched}/${total}`;
+        } else {
+          progreso = "N/A";
+          comentario = "Juego No Participado";
+        }
+        break;
+      }
+
+      case 'Rompecabezas': {
+        const key = `puzzle-${partidaId}-${equipoNumero}`;
+        const game = puzzleGames[key];
+        if (game) {
+          progreso = `${game.state.progress}%`;
+        } else {
+          progreso = "N/A";
+          comentario = "Juego No Participado";
+        }
+        break;
+      }
+    }
+
+    resultados.push({
+      partidaId,
+      equipoNumero,
+      juegoNumero: orden,
+      tipoJuego: tipo,
+      tiempo,
+      progreso,
+      tema,
+      comentario,
+      OrdenCompletado: ordenCompletado[equipoNumero] || null
+    });
+  }
+
+  console.log(`[RESULTADOS] Juego #${orden} - Tipo: ${tipo}`);
+  console.table(resultados);
+
+  return resultados;
+}
+
+
+async function evaluarLogrosGrupales(partidaId) {
+  try {
+    const pool = await poolPromise;
+
+    const equipos = partidaTeams.get(partidaId);
+    const resultados = resultadosPorEquipo[partidaId];
+    if (!equipos || !resultados) return;
+
+    // Filtrar juegos válidos (descartar dibujo si es el único)
+    const juegosUtiles = resultados.filter(j => j.tipoJuego !== "Dibujo");
+    if (juegosUtiles.length === 0) return; // No hay juegos válidos
+
+    const equiposValidos = Object.keys(equipos).map(e => parseInt(e));
+    const puntuaciones = {};
+
+    // A. Calcular puntuaciones por orden de finalización
+    const ordenPorJuego = {};
+
+    for (const juego of juegosUtiles) {
+      if (!juego.resultados || typeof juego.resultados !== 'object') continue;
+
+      // Filtrar solo los equipos que participaron
+      const resultadosValidos = Object.entries(juego.resultados).filter(([equipoId, data]) => {
+        const comentario = (data.comentario || '').toLowerCase();
+        return !comentario.includes("cancelado") && !comentario.includes("no participó");
+      });
+
+      resultadosValidos.sort(([, a], [, b]) => {
+        const ta = a.tiempo || 999999;
+        const tb = b.tiempo || 999999;
+        return ta - tb;
+      });
+
+      resultadosValidos.forEach(([equipoId], index) => {
+        const id = parseInt(equipoId);
+        const puntos = equiposValidos.length - index; // más alto si quedó de primero
+        puntuaciones[id] = (puntuaciones[id] || 0) + puntos;
+      });
+    }
+
+    // Determinar top 3
+    const posiciones = Object.entries(puntuaciones)
+      .sort(([, a], [, b]) => b - a)
+      .map(([equipoId], index) => ({ equipoId: parseInt(equipoId), posicion: index + 1 }));
+
+    // B. Revisión por equipo
+    for (const { equipoId, posicion } of posiciones) {
+      const miembros = equipos[equipoId] || [];
+
+      let logros = [];
+
+      if (posicion === 1) logros.push("Coordinación Perfecta");
+      if (posicion === 2) logros.push("Trabajo en equipo poderoso");
+      if (posicion === 3) logros.push("Apoyo entre todos");
+
+      // B. Logros por tipo de juego jugado
+      const juegosDelEquipo = juegosUtiles.filter(juego => {
+        const data = juego.resultados?.[equipoId];
+        if (!data) return false;
+        const comentario = (data.comentario || "").toLowerCase();
+        return !comentario.includes("cancelado") && !comentario.includes("no participó");
+      });
+
+      for (const juego of juegosDelEquipo) {
+        const tipo = juego.tipoJuego;
+        if (tipo === "Dibujo") logros.push("Artista");
+        if (tipo === "Ahorcado") logros.push("Adivinador (Grupo)");
+        if (tipo === "Memoria") logros.push("Buena vista");
+        if (tipo === "Rompecabezas") logros.push("Gran talento");
+      }
+
+      // C. Final perfecto y trabajo en equipo
+      const todosJuegos = resultados.filter(j => j.resultados?.[equipoId]);
+
+      const sinErrores = todosJuegos.every(j => {
+        const d = j.resultados[equipoId];
+        return d && d.progreso?.actual === d.progreso?.total;
+      });
+
+      const todosCompletados = todosJuegos.every(j => {
+        const d = j.resultados[equipoId];
+        const comentario = (d?.comentario || "").toLowerCase();
+        return d && !comentario.includes("cancelado") && !comentario.includes("no participó");
+      });
+
+      if (todosJuegos.length > 0 && todosCompletados) {
+        logros.push("Trabajo en equipo");
+        if (sinErrores) {
+          logros.push("Final Perfecto");
+        }
+      }
+
+      // Insertar logros para cada miembro del equipo
+      for (const { userId } of miembros) {
+        for (const nombre of logros) {
+          const logroQuery = await pool.request()
+            .input('nombre', sql.NVarChar(100), nombre)
+            .query(`SELECT Logro_ID_PK FROM Logros_TB WHERE Nombre = @nombre AND Tipo = 'grupo'`);
+
+          if (logroQuery.recordset.length === 0) continue;
+          const logroId = logroQuery.recordset[0].Logro_ID_PK;
+
+          await pool.request()
+            .input('userId', sql.Int, userId)
+            .input('logroId', sql.Int, logroId)
+            .input('partidaId', sql.Int, partidaId)
+            .query(`
+              IF NOT EXISTS (
+                SELECT 1 FROM Usuario_Logros_TB 
+                WHERE Usuario_ID_FK = @userId AND Logro_ID_FK = @logroId
+              )
+              INSERT INTO Usuario_Logros_TB (Usuario_ID_FK, Logro_ID_FK, Partida_ID_FK)
+              VALUES (@userId, @logroId, @partidaId)
+            `);
+        }
+      }
+
+      console.log(`[LOGROS-GRUPO] Equipo ${equipoId} (${posicion}º):`, logros);
+    }
+  } catch (error) {
+    console.error('Error al evaluar logros grupales:', error);
+  }
 }
 
 
