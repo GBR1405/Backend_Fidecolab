@@ -1641,35 +1641,32 @@ socket.on('guessLetter', ({ partidaId, equipoNumero, letra }) => {
 
 socket.on('startHangmanVote', ({ partidaId, equipoNumero, letra, userId }) => {
   const voteKey = `${partidaId}-${equipoNumero}`;
-  
-  // Si no hay votación en curso, iniciar una nueva
+
+  // Si no hay votación activa, iniciar una nueva
   if (!hangmanVotes[voteKey]) {
     hangmanVotes[voteKey] = {
       votes: {},
-      timer: setTimeout(() => {
-        finalizarVotacion(partidaId, equipoNumero);
-      }, VOTING_TIME)
+      timer: setTimeout(() => finalizarVotacion(partidaId, equipoNumero), VOTING_TIME)
     };
-    
-    // Emitir a todos que comienza la votación
+
     io.to(`team-${partidaId}-${equipoNumero}`).emit('hangmanVoteStarted', {
       tiempoRestante: VOTING_TIME
     });
   }
-  
-  // Registrar voto (cada usuario solo puede votar una vez)
-  // Primero eliminamos cualquier voto previo de este usuario
-  Object.keys(hangmanVotes[voteKey].votes).forEach(l => {
-    hangmanVotes[voteKey].votes[l] = hangmanVotes[voteKey].votes[l].filter(id => id !== userId);
+
+  // Remover votos anteriores del usuario
+  Object.values(hangmanVotes[voteKey].votes).forEach(userIds => {
+    const index = userIds.indexOf(userId);
+    if (index !== -1) userIds.splice(index, 1);
   });
-  
+
   // Agregar nuevo voto
   if (!hangmanVotes[voteKey].votes[letra]) {
     hangmanVotes[voteKey].votes[letra] = [];
   }
   hangmanVotes[voteKey].votes[letra].push(userId);
-  
-  // Emitir actualización de votos a todos
+
+  // Emitir actualización a todos
   io.to(`team-${partidaId}-${equipoNumero}`).emit('hangmanVoteUpdate', {
     votes: hangmanVotes[voteKey].votes
   });
@@ -1678,18 +1675,17 @@ socket.on('startHangmanVote', ({ partidaId, equipoNumero, letra, userId }) => {
 function finalizarVotacion(partidaId, equipoNumero) {
   const voteKey = `${partidaId}-${equipoNumero}`;
   const votacion = hangmanVotes[voteKey];
-
   if (!votacion) return;
 
   const votos = votacion.votes;
 
-  // Obtener letras con sus cantidades de votos
-  const letrasConVotos = Object.entries(votos)
-    .map(([letra, userIds]) => ({ letra, cantidad: userIds.length }))
-    .filter(entry => entry.cantidad > 0);
+  // Obtener letra más votada, ignorando empate
+  const entries = Object.entries(votos).map(([letra, users]) => ({
+    letra,
+    cantidad: users.length
+  }));
 
-  // Si nadie votó, no hacer nada
-  if (letrasConVotos.length === 0) {
+  if (entries.length === 0) {
     io.to(`team-${partidaId}-${equipoNumero}`).emit('hangmanVoteEnded', {
       letraGanadora: null,
       votos
@@ -1699,21 +1695,18 @@ function finalizarVotacion(partidaId, equipoNumero) {
   }
 
   // Ordenar por cantidad de votos descendente
-  letrasConVotos.sort((a, b) => b.cantidad - a.cantidad);
+  entries.sort((a, b) => b.cantidad - a.cantidad);
+  const [top1, top2] = entries;
 
-  const [top1, top2] = letrasConVotos;
+  const letraGanadora = (!top2 || top1.cantidad > top2.cantidad) ? top1.letra : null;
 
-  // Verificar empate
-  const letraGanadora = (top2 && top1.cantidad === top2.cantidad) ? null : top1.letra;
-
-  // Emitir resultado
   io.to(`team-${partidaId}-${equipoNumero}`).emit('hangmanVoteEnded', {
     letraGanadora,
     votos
   });
 
-  // Si hay letra ganadora, enviarla al flujo de guessLetter
   if (letraGanadora) {
+    // Ejecutar adivinanza como si fuera clic
     io.to(`team-${partidaId}-${equipoNumero}`).emit('guessLetter', {
       partidaId,
       equipoNumero,
@@ -1721,7 +1714,6 @@ function finalizarVotacion(partidaId, equipoNumero) {
     });
   }
 
-  // Limpiar estado
   delete hangmanVotes[voteKey];
 }
 
