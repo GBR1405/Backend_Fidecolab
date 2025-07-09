@@ -2140,6 +2140,7 @@ function getAllTeamProgress(partidaId) {
 
 // ROMPECABEZAS NUEVO 2.0 -----------------------
 
+// Modificar el evento initPuzzleGame en app.js
 socket.on('initPuzzleGame', ({ partidaId, equipoNumero, difficulty, imageUrl }) => {
   const normalized = difficulty
     .normalize("NFD")
@@ -2157,38 +2158,46 @@ socket.on('initPuzzleGame', ({ partidaId, equipoNumero, difficulty, imageUrl }) 
   const maxSwaps = totalPieces + 20;
   const key = `puzzle-${partidaId}-${equipoNumero}`;
 
-  // Forzar regeneración eliminando el estado anterior
-  delete puzzleGames[key];
+  // Verificar si necesitamos regenerar el puzzle
+  const shouldRegenerate = !puzzleGames[key] || 
+                         puzzleGames[key].config.rows !== size ||
+                         puzzleGames[key].config.imageUrl !== imageUrl;
 
-  if (!gameTeamTimestamps[partidaId]) gameTeamTimestamps[partidaId] = {};
-  if (!gameTeamTimestamps[partidaId][equipoNumero]) {
-    gameTeamTimestamps[partidaId][equipoNumero] = {
-      startedAt: new Date(),
-      completedAt: null
+  if (shouldRegenerate) {
+    // Eliminar el estado anterior si existe
+    delete puzzleGames[key];
+
+    if (!gameTeamTimestamps[partidaId]) gameTeamTimestamps[partidaId] = {};
+    if (!gameTeamTimestamps[partidaId][equipoNumero]) {
+      gameTeamTimestamps[partidaId][equipoNumero] = {
+        startedAt: new Date(),
+        completedAt: null
+      };
+    }
+
+    // Generar piezas con el tamaño correcto
+    const seed = `${partidaId}-${equipoNumero}-${Date.now()}`; // Añadimos timestamp para mayor unicidad
+    const pieces = generatePuzzlePieces(size, imageUrl, seed);
+
+    puzzleGames[key] = {
+      config: {
+        rows: size,
+        cols: size,
+        swapsLeft: maxSwaps,
+        imageUrl,
+        difficulty: normalized // Guardamos la dificultad normalizada
+      },
+      state: {
+        pieces,
+        selected: [],
+        progress: calculatePuzzleProgress(pieces)
+      }
     };
   }
 
-  // Generar piezas con el tamaño correcto
-  const seed = `${partidaId}-${equipoNumero}`;
-  const pieces = generatePuzzlePieces(size, imageUrl, seed);
-
-  puzzleGames[key] = {
-    config: {
-      rows: size,
-      cols: size,
-      swapsLeft: maxSwaps,
-      imageUrl
-    },
-    state: {
-      pieces,
-      selected: [],
-      progress: calculatePuzzleProgress(pieces)
-    }
-  };
-
+  // Siempre enviar el estado actual (regenerado o existente)
   io.to(`team-${partidaId}-${equipoNumero}`).emit('puzzleGameState', puzzleGames[key]);
 });
-
 // Nuevo evento para sincronización al reconectar
 socket.on('syncPuzzleGame', ({ partidaId, equipoNumero }) => {
   const key = `puzzle-${partidaId}-${equipoNumero}`;
