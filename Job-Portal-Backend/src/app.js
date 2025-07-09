@@ -2120,8 +2120,8 @@ function getAllTeamProgress(partidaId) {
 // ROMPECABEZAS NUEVO 2.0 -----------------------
 
 socket.on('initPuzzleGame', ({ partidaId, equipoNumero, difficulty, imageUrl }) => {
-  const dif = difficulty.toLowerCase();
-  const sizeMap = { 'Fácil': 6, 'Normal': 7, 'Difícil': 8 };
+  const dif = difficulty.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  const sizeMap = { 'facil': 6, 'normal': 7, 'dificil': 8 };
   const size = sizeMap[dif] || 6;
   const totalPieces = size * size;
   const maxSwaps = totalPieces + 20;
