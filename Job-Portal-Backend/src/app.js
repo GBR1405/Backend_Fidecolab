@@ -1151,55 +1151,72 @@ socket.on('RequestTimeSync', (partidaId) => {
 });
 
 // Mejora el evento nextGame
-socket.on('nextGame', ({ partidaId }) => {
+socket.on('nextGame', async (partidaId, callback) => {
   try {
-    const partida = partidasEnCurso[partidaId];
-    if (!partida) return;
-
-    const currentIndex = global.partidasConfig?.[partidaId]?.currentIndex ?? 0;
-
-    // Finalizar tiempo del juego anterior (si aplica)
-    partida.equipos.forEach((equipo, equipoNumero) => {
-      if (!gameTeamTimestamps[partidaId]) gameTeamTimestamps[partidaId] = {};
-      if (!gameTeamTimestamps[partidaId][equipoNumero]) {
-        gameTeamTimestamps[partidaId][equipoNumero] = {
-          startedAt: new Date(),
-          completedAt: null
-        };
-      }
-      gameTeamTimestamps[partidaId][equipoNumero].completedAt = new Date();
-    });
-
-    // Avanzar índice de juego
-    global.partidasConfig[partidaId].currentIndex++;
-    const newIndex = global.partidasConfig[partidaId].currentIndex;
-    const nuevoJuego = global.partidasConfig[partidaId].juegos[newIndex];
-
-    if (!nuevoJuego) {
-      io.to(`partida-${partidaId}`).emit('partidaFinalizada');
-      console.log(`[INFO] Partida ${partidaId} finalizada.`);
-      return;
+    if (!global.partidasConfig || !global.partidasConfig[partidaId]) {
+      return callback({ error: "Configuración no encontrada" });
     }
 
-    // Eliminar puzzle anterior (si el juego anterior fue rompecabezas)
-    const juegoAnterior = global.partidasConfig[partidaId].juegos[currentIndex];
-    if (juegoAnterior?.tipo === 'Rompecabezas') {
-      Object.keys(puzzleGames).forEach(key => {
-        if (key.startsWith(`puzzle-${partidaId}-`) && key.includes(`-${currentIndex}`)) {
-          delete puzzleGames[key];
-        }
+    await generarResultadosJuegoActual(partidaId);
+
+    io.to(`partida_${partidaId}`).emit('cleanPreviousGames', { partidaId });
+
+    Object.keys(hangmanGames).forEach(key => {
+      if (key.startsWith(`hangman-${partidaId}`)) {
+        delete hangmanGames[key];
+      }
+    });
+
+    const config = global.partidasConfig[partidaId];
+    
+    // Verificar si ya se completaron todos los juegos
+    if (config.currentIndex >= config.juegos.length - 1) {
+      delete global.partidasConfig[partidaId];
+      io.to(`partida_${partidaId}`).emit('allGamesCompleted');
+      return callback({ completed: true });
+    }
+
+    // Incrementar el índice
+    config.currentIndex += 1;
+    const currentGame = config.juegos[config.currentIndex];
+
+    startGameTimer(
+      partidaId, 
+      currentGame.tipo, 
+      currentGame.dificultad.toLowerCase()
+    );
+    
+    // Opción 1: Emitir a TODA la partida (incluye profesor y estudiantes)
+    io.to(`partida_${partidaId}`).emit('gameChanged', {
+      currentGame,
+      currentIndex: config.currentIndex,
+      total: config.juegos.length
+    });
+
+    
+
+    // Opción 2: Emitir solo a las salas de equipo (si necesitas diferenciar)
+    if (partidaRooms.has(partidaId)) {
+      const equipos = partidaRooms.get(partidaId);
+      equipos.forEach(equipoNumero => {
+        io.to(`team-${partidaId}-${equipoNumero}`).emit('gameChanged', {
+          currentGame,
+          currentIndex: config.currentIndex,
+          total: config.juegos.length
+        });
       });
     }
 
-    io.to(`partida-${partidaId}`).emit('nuevoJuego', {
-      juego: nuevoJuego,
-      index: newIndex
+    callback({ 
+      success: true, 
+      currentIndex: config.currentIndex,
+      currentGame,
+      total: config.juegos.length
     });
-
-    console.log(`[INFO] Partida ${partidaId} avanzó al juego ${newIndex + 1}`);
 
   } catch (error) {
     console.error('Error en nextGame:', error);
+    callback({ error: "Error interno al cambiar de juego" });
   }
 });
 
@@ -1438,6 +1455,12 @@ socket.on('cleanPreviousGames', ({ partidaId }) => {
     Object.keys(drawingGames).forEach(key => {
       if (key.startsWith(`drawing-${partidaId}`)) {
         delete drawingGames[key];
+      }
+    });
+
+    Object.keys(global.puzzleGames || {}).forEach(key => {
+      if (key.startsWith(`puzzle-${partidaId}-`)) {
+        delete global.puzzleGames[key];
       }
     });
 
