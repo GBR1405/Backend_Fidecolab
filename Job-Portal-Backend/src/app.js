@@ -2138,13 +2138,12 @@ socket.on('initPuzzleGame', ({ partidaId, equipoNumero, difficulty, imageUrl }) 
     const currentIndex = global.partidasConfig?.[partidaId]?.currentIndex ?? 0;
     const gameId = `puzzle-${partidaId}-${equipoNumero}-${currentIndex}`;
 
-    // Si ya existe, solo reenviar
+    // Verifica si ya existe (para reconexión)
     if (puzzleGames[gameId]) {
       socket.emit('puzzleGameState', puzzleGames[gameId]);
       return;
     }
 
-    // Convertir dificultad correctamente (asegura nombres uniformes)
     const difKey = difficulty.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, '');
 
     const size = {
@@ -2172,7 +2171,6 @@ socket.on('initPuzzleGame', ({ partidaId, equipoNumero, difficulty, imageUrl }) 
 
     puzzleGames[gameId] = game;
 
-    // Inicializar timestamps si no existen
     if (!gameTeamTimestamps[partidaId]) gameTeamTimestamps[partidaId] = {};
     if (!gameTeamTimestamps[partidaId][equipoNumero]) {
       gameTeamTimestamps[partidaId][equipoNumero] = {
@@ -2182,7 +2180,6 @@ socket.on('initPuzzleGame', ({ partidaId, equipoNumero, difficulty, imageUrl }) 
     }
 
     io.to(`team-${partidaId}-${equipoNumero}`).emit('puzzleGameState', game);
-
   } catch (error) {
     console.error('Error en initPuzzleGame:', error);
     socket.emit('puzzleGameError', { message: error.message });
@@ -2249,41 +2246,14 @@ socket.on('selectPuzzlePiece', ({ partidaId, equipoNumero, pieceId, userId }) =>
 });
 
 socket.on('requestPuzzleState', ({ partidaId, equipoNumero }) => {
-  const key = `puzzle-${partidaId}-${equipoNumero}`;
-  
-  if (!puzzleGames[key]) {
-    // Si no existe, crear uno nuevo con la configuración actual
-    const config = global.partidasConfig[partidaId]?.juegos.find(j => j.tipo === 'Rompecabezas');
-    if (config) {
-      const seed = `${partidaId}-${equipoNumero}`; // Semilla estable (sin timestamp)
-      puzzleGames[key] = generarPuzzleDesdeConfig(config, seed);
-    }
-  }
-  
-  if (puzzleGames[key]) {
-    socket.emit('puzzleGameState', puzzleGames[key]);
+  const currentIndex = global.partidasConfig?.[partidaId]?.currentIndex ?? 0;
+  const gameId = `puzzle-${partidaId}-${equipoNumero}-${currentIndex}`;
+  if (puzzleGames[gameId]) {
+    socket.emit('puzzleGameState', puzzleGames[gameId]);
   }
 });
 
-function generarPuzzleDesdeConfig(config, seed) {
-  const dif = config.dificultad.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-  const size = { 'facil': 6, 'normal': 7, 'dificil': 8 }[dif] || 6;
-  
-  return {
-    config: {
-      rows: size,
-      cols: size,
-      swapsLeft: size * size + 20,
-      imageUrl: config.tema,
-      difficulty: dif
-    },
-    state: {
-      pieces: generatePuzzlePieces(size, config.tema, seed),
-      selected: [],
-      progress: 0
-    }
-  };
-}
+
 //FINAL
 
 socket.on('getTeamProgress', (partidaId, callback) => {
