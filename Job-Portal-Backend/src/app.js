@@ -137,8 +137,6 @@ const drawingStates = {};
 const tintaStates = {};
 
 const gameTeamTimestamps = {};
-const resultadosPorEquipo = {};
-const partidasEnCurso = new Map();
 
 const PUZZLE_CONFIG = {
   'Fácil': { size: 3, pieceSize: 150 },
@@ -165,16 +163,6 @@ const GAME_TIMES = {
 
 //Funciones extras
 
-function parsearProgreso(p) {
-  if (typeof p === 'string' && p.includes('/')) {
-    const [actual, total] = p.split('/').map(Number);
-    if (!isNaN(actual) && !isNaN(total)) return { actual, total };
-  } else if (typeof p === 'string' && p.endsWith('%')) {
-    const actual = parseInt(p);
-    return { actual, total: 100 };
-  }
-  return { actual: 0, total: 0 };
-}
 
 
 // Función para calcular el progreso del rompecabezas
@@ -561,56 +549,50 @@ io.on('connection', (socket) => {
   try {
     console.log(`[INFO] Finalizando partida ${partidaId}`);
     const config = global.partidasConfig[partidaId];
-    if (!config) return callback({ error: "Partida no encontrada" });
+    if (!config) {
+      return callback({ error: "Partida no encontrada" });
+    }
 
     const juegos = config.juegos;
     const currentIndex = config.currentIndex;
 
-    resultadosPorEquipo[partidaId] = [];
+    // 1. Generar resultados de TODOS los juegos jugados
+    gameResults[partidaId] = [];
 
-    // 1. Generar resultados de todos los juegos completados hasta ahora
     for (let i = 0; i <= currentIndex; i++) {
-      config.currentIndex = i;
-      const resultadosParciales = await generarResultadosJuegoActualFinal(partidaId);
-      resultadosPorEquipo[partidaId].push({
-        tipoJuego: resultadosParciales[0]?.tipoJuego || 'Desconocido',
-        resultados: Object.fromEntries(resultadosParciales.map(r => [
-          r.equipoNumero,
-          {
-            progreso: parsearProgreso(r.progreso),
-            tiempo: r.tiempo,
-            comentario: r.comentario,
-            OrdenCompletado: r.OrdenCompletado
-          }
-        ]))
-      });
+      config.currentIndex = i; // Forzamos índice actual
+      const resultadosParciales = await generarResultadosJuegoActual(partidaId);
+      gameResults[partidaId].push(...resultadosParciales);
     }
 
-    // 2. Detectar si la partida se terminó anticipadamente y completar con "cancelado"
+    // 2. Detectar si la partida se terminó anticipadamente
     const finalizacionAnticipada = currentIndex < juegos.length - 1;
+
     if (finalizacionAnticipada) {
       const pool = await poolPromise;
       const equiposQuery = await pool.request()
         .input('partidaId', sql.Int, partidaId)
-        .query(`SELECT DISTINCT Equipo_Numero FROM Participantes_TB WHERE Partida_ID_FK = @partidaId`);
-
+        .query(`
+          SELECT DISTINCT Equipo_Numero FROM Participantes_TB 
+          WHERE Partida_ID_FK = @partidaId
+        `);
+  
       const totalEquipos = equiposQuery.recordset.map(row => row.Equipo_Numero);
 
       for (let i = currentIndex + 1; i < juegos.length; i++) {
         const juego = juegos[i];
-        const resultadoCancelado = {};
-        for (const equipo of totalEquipos) {
-          resultadoCancelado[equipo] = {
-            progreso: { actual: 0, total: 0 },
-            tiempo: 0,
-            comentario: "Juego Cancelado",
-            OrdenCompletado: null
-          };
+        for (const equipoNumero of totalEquipos) {
+          gameResults[partidaId].push({
+            partidaId,
+            equipoNumero,
+            juegoNumero: juego.Orden,
+            tipoJuego: juego.tipo,
+            tiempo: "N/A",
+            progreso: "N/A",
+            tema: juego.tema || "N/A",
+            comentario: "Juego Cancelado"
+          });
         }
-        resultadosPorEquipo[partidaId].push({
-          tipoJuego: juego.tipo,
-          resultados: resultadoCancelado
-        });
       }
 
       console.log(`[INFO] Partida ${partidaId} finalizada anticipadamente.`);
@@ -618,9 +600,10 @@ io.on('connection', (socket) => {
       console.log(`[INFO] Partida ${partidaId} finalizada normalmente.`);
     }
 
-    // 3. Marcar la partida como finalizada
     const now = new Date();
-    await poolPromise.then(pool =>
+
+    // 3. Marcar la partida como finalizada en la base de datos
+    await poolPromise.then(pool => 
       pool.request()
         .input('partidaId', sql.Int, partidaId)
         .input('fechaFin', sql.DateTime, now)
@@ -632,12 +615,57 @@ io.on('connection', (socket) => {
         `)
     );
 
-    // 4. Guardar en BD y generar logros
-    await guardarResultadosFinalesEnBD(partidaId);
+    partidaTeams.delete(partidaId);
+
+    // 4. Agrupar resultados por equipo
+    function agruparResultadosPorEquipo(resultadosArray) {
+      const porEquipo = {};
+      for (const resultado of resultadosArray) {
+        const equipo = resultado.equipoNumero;
+        if (!porEquipo[equipo]) {
+          porEquipo[equipo] = {
+            partidaId: resultado.partidaId,
+            equipo,
+            juegos: []
+          };
+        }
+        porEquipo[equipo].juegos.push({
+          juegoNumero: resultado.juegoNumero,
+          tipoJuego: resultado.tipoJuego,
+          tiempo: resultado.tiempo,
+          progreso: resultado.progreso,
+          tema: resultado.tema,
+          comentario: resultado.comentario
+        });
+      }
+      return Object.values(porEquipo);
+    }
+
+    const resultadosFinales = gameResults[partidaId] || [];
+    const resultadosPorEquipo = agruparResultadosPorEquipo(resultadosFinales);
+
+    const pool = await poolPromise;
+    for (const equipo of resultadosPorEquipo) {
+      const jsonResultados = JSON.stringify(equipo.juegos);
+
+      await pool.request()
+        .input('Equipo', sql.Int, equipo.equipo)
+        .input('Partida_ID_FK', sql.Int, equipo.partidaId)
+        .input('Resultados', sql.NVarChar(sql.MAX), jsonResultados)
+        .input('Comentario', sql.VarChar(200), '')
+        .query(`
+          INSERT INTO Resultados_TB (Equipo, Partida_ID_FK, Resultados, Comentario)
+          VALUES (@Equipo, @Partida_ID_FK, @Resultados, @Comentario)
+        `);
+    }
+
+    console.log(`[BD] Resultados insertados para ${resultadosPorEquipo.length} equipos`);
+
+    await evaluarLogrosGrupales(partidaId);
+    await evaluarLogrosPersonales(partidaId);
 
     // 5. Limpiar memoria
-    partidaTeams.delete(partidaId);
-    delete resultadosPorEquipo[partidaId];
+    delete gameResults[partidaId];
     delete gameTeamTimestamps[partidaId];
     delete global.partidasConfig[partidaId];
 
@@ -649,18 +677,19 @@ io.on('connection', (socket) => {
       });
     });
 
-    // 6. Notificar y responder
+    // 6. Notificar a todos y devolver confirmación
     io.to(`partida_${partidaId}`).emit('gameFinished', { partidaId });
     callback({ success: true });
 
-    // 7. Debug
-    console.log(`[RESULTADOS][${partidaId}] Juego terminado y resultados generados.`);
+    // 7. Debug de resultados
+    console.log("[RESULTADOS FINALES]");
+    console.table(resultadosFinales);
+
   } catch (error) {
     console.error('Error al finalizar la partida:', error);
     callback({ error: error.message });
   }
 });
-
 
   // Salir de una sala
   socket.on('disconnect', () => {
@@ -1127,19 +1156,7 @@ socket.on('nextGame', async (partidaId, callback) => {
       return callback({ error: "Configuración no encontrada" });
     }
 
-    const resultados = await generarResultadosJuegoActualFinal(partidaId);
-      if (!resultadosPorEquipo[partidaId]) resultadosPorEquipo[partidaId] = [];
-
-      resultadosPorEquipo[partidaId].push({
-        tipoJuego: resultados[0]?.tipoJuego || 'Desconocido',
-        resultados: Object.fromEntries(resultados.map(r => [r.equipoNumero, {
-          progreso: parsearProgreso(r.progreso),
-          tiempo: r.tiempo,
-          comentario: r.comentario,
-          OrdenCompletado: r.OrdenCompletado
-        }]))
-      });
-
+    await generarResultadosJuegoActual(partidaId);
 
     io.to(`partida_${partidaId}`).emit('cleanPreviousGames', { partidaId });
 
@@ -1208,8 +1225,6 @@ socket.on('nextGame', async (partidaId, callback) => {
 // Inicializar juego de memoria
 socket.on('initMemoryGame', async ({ partidaId, equipoNumero }) => {
   try {
-    const config = global.partidasConfig?.[partidaId];
-
     // 1. Verificar existencia de partida
     const partidaConfig = global.partidasConfig[partidaId];
     if (!partidaConfig) throw new Error('Configuración de partida no encontrada');
@@ -1229,18 +1244,9 @@ socket.on('initMemoryGame', async ({ partidaId, equipoNumero }) => {
       return;
     }
 
-    const juegoId = config.currentIndex; // o juego.Orden si usás Orden para identificar
-
-    if (!gameTeamTimestamps[partidaId]) {
-      gameTeamTimestamps[partidaId] = {};
-    }
-
-    if (!gameTeamTimestamps[partidaId][juegoId]) {
-      gameTeamTimestamps[partidaId][juegoId] = {};
-    }
-
-    if (!gameTeamTimestamps[partidaId][juegoId][equipoNumero]) {
-      gameTeamTimestamps[partidaId][juegoId][equipoNumero] = {
+    if (!gameTeamTimestamps[partidaId]) gameTeamTimestamps[partidaId] = {};
+    if (!gameTeamTimestamps[partidaId][equipoNumero]) {
+      gameTeamTimestamps[partidaId][equipoNumero] = {
         startedAt: new Date(),
         completedAt: null
       };
@@ -1295,8 +1301,6 @@ function getPairsCount(difficulty) {
 // Voltear una carta
 socket.on('flipMemoryCard', ({ partidaId, equipoNumero, cardId }) => {
   try {
-    const config = global.partidasConfig?.[partidaId];
-
     const partidaConfig = global.partidasConfig[partidaId];
     if (!partidaConfig) throw new Error('Configuración de partida no encontrada');
     
@@ -1349,13 +1353,9 @@ socket.on('flipMemoryCard', ({ partidaId, equipoNumero, cardId }) => {
           if (game.state.matchedPairs === game.config.pairsCount) {
             game.state.gameCompleted = true;
 
-            const juegoId = config.currentIndex; // O usar game.Orden si eso está disponible
-
-              if (
-                gameTeamTimestamps?.[partidaId]?.[juegoId]?.[equipoNumero]
-              ) {
-                gameTeamTimestamps[partidaId][juegoId][equipoNumero].completedAt = new Date();
-              }
+            if (gameTeamTimestamps?.[partidaId]?.[equipoNumero]) {
+              gameTeamTimestamps[partidaId][equipoNumero].completedAt = new Date();
+            }
 
             io.to(`team-${partidaId}-${equipoNumero}`).emit('memoryGameState', {
               ...game,
@@ -1516,23 +1516,13 @@ socket.on('initHangmanGame', ({ partidaId, equipoNumero }) => {
       }
     };
 
-    const juegoId = config.currentIndex; // o juego.Orden si usás Orden para identificar
-
-    if (!gameTeamTimestamps[partidaId]) {
-      gameTeamTimestamps[partidaId] = {};
-    }
-
-    if (!gameTeamTimestamps[partidaId][juegoId]) {
-      gameTeamTimestamps[partidaId][juegoId] = {};
-    }
-
-    if (!gameTeamTimestamps[partidaId][juegoId][equipoNumero]) {
-      gameTeamTimestamps[partidaId][juegoId][equipoNumero] = {
+    if (!gameTeamTimestamps[partidaId]) gameTeamTimestamps[partidaId] = {};
+    if (!gameTeamTimestamps[partidaId][equipoNumero]) {
+      gameTeamTimestamps[partidaId][equipoNumero] = {
         startedAt: new Date(),
         completedAt: null
       };
     }
-
 
     // Enviar estado inicial
     io.to(`team-${partidaId}-${equipoNumero}`).emit('hangmanGameState', hangmanGames[gameId]);
@@ -1548,7 +1538,6 @@ socket.on('initHangmanGame', ({ partidaId, equipoNumero }) => {
 // Evento para adivinar letra
 socket.on('guessLetter', ({ partidaId, equipoNumero, letra }) => {
   try {
-    const config = global.partidasConfig?.[partidaId];
     const gameId = `hangman-${partidaId}-${equipoNumero}`;
     const game = hangmanGames[gameId];
     
@@ -1589,13 +1578,9 @@ socket.on('guessLetter', ({ partidaId, equipoNumero, letra }) => {
         game.state.juegoTerminado = true;
         game.state.ganado = true;
 
-        const juegoId = config.currentIndex; // O usar game.Orden si eso está disponible
-
-          if (
-            gameTeamTimestamps?.[partidaId]?.[juegoId]?.[equipoNumero]
-          ) {
-            gameTeamTimestamps[partidaId][juegoId][equipoNumero].completedAt = new Date();
-          }
+        if (!gameTeamTimestamps[partidaId]?.[equipoNumero]?.completedAt) {
+          gameTeamTimestamps[partidaId][equipoNumero].completedAt = new Date();
+        }
       }
     } else {
       game.state.intentosRestantes--;
@@ -1605,12 +1590,8 @@ socket.on('guessLetter', ({ partidaId, equipoNumero, letra }) => {
         game.state.juegoTerminado = true;
         game.state.ganado = false;
 
-        const juegoId = config.currentIndex; // O usar game.Orden si eso está disponible
-
-        if (
-          gameTeamTimestamps?.[partidaId]?.[juegoId]?.[equipoNumero]
-        ) {
-          gameTeamTimestamps[partidaId][juegoId][equipoNumero].completedAt = new Date();
+        if (!gameTeamTimestamps[partidaId]?.[equipoNumero]?.completedAt) {
+          gameTeamTimestamps[partidaId][equipoNumero].completedAt = new Date();
         }
 
       }
@@ -1639,8 +1620,6 @@ socket.on('guessLetter', ({ partidaId, equipoNumero, letra }) => {
 // Inicializar juego de dibujo
 socket.on('initDrawingGame', ({ partidaId, equipoNumero, userId }) => {
   const gameId = `drawing-${partidaId}-${equipoNumero}`;
-  const config = global.partidasConfig?.[partidaId];
-
 
   // Unir al socket a la sala de su equipo
   socket.join(`team-${partidaId}-${equipoNumero}`);
@@ -1652,23 +1631,13 @@ socket.on('initDrawingGame', ({ partidaId, equipoNumero, userId }) => {
     };
   }
 
-  const juegoId = config.currentIndex; // o juego.Orden si usás Orden para identificar
-
-    if (!gameTeamTimestamps[partidaId]) {
-      gameTeamTimestamps[partidaId] = {};
-    }
-
-    if (!gameTeamTimestamps[partidaId][juegoId]) {
-      gameTeamTimestamps[partidaId][juegoId] = {};
-    }
-
-    if (!gameTeamTimestamps[partidaId][juegoId][equipoNumero]) {
-      gameTeamTimestamps[partidaId][juegoId][equipoNumero] = {
-        startedAt: new Date(),
-        completedAt: null
-      };
-    }
-
+  if (!gameTeamTimestamps[partidaId]) gameTeamTimestamps[partidaId] = {};
+  if (!gameTeamTimestamps[partidaId][equipoNumero]) {
+    gameTeamTimestamps[partidaId][equipoNumero] = {
+      startedAt: new Date(),
+      completedAt: null
+    };
+  }
 
   // Inicializar tinta si no existe
   if (drawingGames[gameId].tintaStates[userId] === undefined) {
@@ -2151,8 +2120,6 @@ function getAllTeamProgress(partidaId) {
 // ROMPECABEZAS NUEVO 2.0 -----------------------
 
 socket.on('initPuzzleGame', ({ partidaId, equipoNumero, difficulty, imageUrl }) => {
-  const config = global.partidasConfig?.[partidaId];
-
   const dif = difficulty.toLowerCase();
   const sizeMap = { 'Fácil': 6, 'Normal': 7, 'Difícil': 8 };
   const size = sizeMap[dif] || 6;
@@ -2166,23 +2133,13 @@ socket.on('initPuzzleGame', ({ partidaId, equipoNumero, difficulty, imageUrl }) 
     return;
   }
 
-  const juegoId = config.currentIndex; // o juego.Orden si usás Orden para identificar
-
-    if (!gameTeamTimestamps[partidaId]) {
-      gameTeamTimestamps[partidaId] = {};
-    }
-
-    if (!gameTeamTimestamps[partidaId][juegoId]) {
-      gameTeamTimestamps[partidaId][juegoId] = {};
-    }
-
-    if (!gameTeamTimestamps[partidaId][juegoId][equipoNumero]) {
-      gameTeamTimestamps[partidaId][juegoId][equipoNumero] = {
+  if (!gameTeamTimestamps[partidaId]) gameTeamTimestamps[partidaId] = {};
+    if (!gameTeamTimestamps[partidaId][equipoNumero]) {
+      gameTeamTimestamps[partidaId][equipoNumero] = {
         startedAt: new Date(),
         completedAt: null
       };
     }
-
 
   // Generar piezas revueltas con semilla
   const seed = `${partidaId}-${equipoNumero}`;
@@ -2206,8 +2163,6 @@ socket.on('initPuzzleGame', ({ partidaId, equipoNumero, difficulty, imageUrl }) 
 });
 
 socket.on('selectPuzzlePiece', ({ partidaId, equipoNumero, pieceId, userId }) => {
-  const config = global.partidasConfig?.[partidaId];
-
   const key = `puzzle-${partidaId}-${equipoNumero}`;
   const game = puzzleGames[key];
   if (!game) return;
@@ -2237,14 +2192,9 @@ socket.on('selectPuzzlePiece', ({ partidaId, equipoNumero, pieceId, userId }) =>
       // Calcular progreso
       game.state.progress = calculatePuzzleProgress(game.state.pieces);
 
-      const juegoId = config.currentIndex; // O usar game.Orden si eso está disponible
-
-      if (
-        gameTeamTimestamps?.[partidaId]?.[juegoId]?.[equipoNumero]
-      ) {
-        gameTeamTimestamps[partidaId][juegoId][equipoNumero].completedAt = new Date();
+      if (game.state.progress === 100 && !gameTeamTimestamps[partidaId]?.[equipoNumero]?.completedAt) {
+        gameTeamTimestamps[partidaId][equipoNumero].completedAt = new Date();
       }
-
 
     }
 
@@ -2524,7 +2474,7 @@ async function evaluarLogrosPersonales(partidaId) {
         let completados = 0;
         for (const juego of juegos) {
           const comentario = juego.comentario?.toLowerCase() || '';
-          if (comentario.includes('Juego Cancelado') || comentario.includes('Juego No Participado')) continue;
+          if (comentario.includes('cancelado') || comentario.includes('no participó')) continue;
 
           if (juego.tipoJuego && conteoJuegos[juego.tipoJuego] !== undefined) {
             conteoJuegos[juego.tipoJuego]++;
@@ -2590,8 +2540,6 @@ async function evaluarLogrosPersonales(partidaId) {
 
       if (logrosAAsignar.length >= 5) agregarLogroSiNoTiene("Cazador de logros");
 
-      console.log(`[LOGRO TEST] Logros para ${userId}`, logrosAAsignar);
-
       // 4. Insertar logros nuevos
       for (const nombre of logrosAAsignar) {
         const logroQuery = await pool.request()
@@ -2622,156 +2570,6 @@ async function evaluarLogrosPersonales(partidaId) {
     console.error('Error al evaluar logros personales:', error);
   }
 }
-
-async function generarResultadosJuegoActualFinal(partidaId) {
-  const config = global.partidasConfig[partidaId];
-  if (!config) return [];
-
-  const juegoActual = config.juegos[config.currentIndex];
-  const tipo = juegoActual.tipo;
-  const orden = juegoActual.Orden;
-  const tema = juegoActual.tema || 'N/A';
-
-  const pool = await poolPromise;
-  const equiposQuery = await pool.request()
-    .input('partidaId', sql.Int, partidaId)
-    .query(`
-      SELECT DISTINCT Equipo_Numero FROM Participantes_TB 
-      WHERE Partida_ID_FK = @partidaId
-    `);
-
-  const totalEquipos = equiposQuery.recordset.map(row => row.Equipo_Numero);
-
-  const timestamps = gameTeamTimestamps?.[partidaId] || {};
-  const inicioJuego = timestamps?.inicio || Date.now();
-
-  // Calcular orden completado
-  const finalizaciones = totalEquipos
-    .map(equipo => {
-      const t = timestamps[equipo];
-      return t?.completedAt ? {
-        equipo,
-        completedAt: new Date(t.completedAt)
-      } : null;
-    })
-    .filter(Boolean)
-    .sort((a, b) => a.completedAt - b.completedAt);
-
-  const ordenCompletado = {};
-  finalizaciones.forEach((entry, index) => {
-    ordenCompletado[entry.equipo] = index + 1;
-  });
-
-  const resultados = [];
-
-  for (const equipoNumero of totalEquipos) {
-    let tiempo = 0;
-    let progreso = '';
-    let comentario = '';
-    let imagenBase64 = null;
-
-    // Tiempo jugado
-    const juegoId = config.currentIndex; // o juego.Orden
-    const started = gameTeamTimestamps?.[partidaId]?.[juegoId]?.[equipoNumero]?.startedAt;
-    const ended = gameTeamTimestamps?.[partidaId]?.[juegoId]?.[equipoNumero]?.completedAt;
-
-    if (!started) {
-      comentario = "Juego no iniciado";
-      progreso = "N/A";
-      tiempo = 0;
-    } else {
-      if (!ended && tipo === 'Dibujo') {
-        ended = new Date();
-        gameTeamTimestamps[partidaId][juegoId][equipoNumero].completedAt = ended;
-      }
-
-      const diffSeconds = ended
-        ? Math.floor((new Date(ended) - new Date(started)) / 1000)
-        : Math.floor((Date.now() - new Date(started)) / 1000);
-      tiempo = diffSeconds;
-    }
-
-    switch (tipo) {
-      case 'Ahorcado': {
-        const key = `hangman-${partidaId}-${equipoNumero}`;
-        const game = hangmanGames[key];
-        if (game) {
-          const intentos = game.state.letrasIntentadas.length;
-          const acertadas = game.state.letrasAdivinadas.length;
-          const fallos = intentos - acertadas;
-          progreso = `${intentos}/${fallos}`;
-        } else {
-          progreso = "N/A";
-          comentario = "Juego No Participado";
-        }
-        break;
-      }
-
-      case 'Dibujo': {
-        const key = `drawing-${partidaId}-${equipoNumero}`;
-        const game = drawingGames[key];
-        imagenBase64 = game?.imageData || null;
-
-        if (!imagenBase64 && game?.actions && Object.keys(game.actions).length > 0) {
-          imagenBase64 = await renderDrawingToBase64(partidaId, equipoNumero);
-        }
-
-        if (imagenBase64) {
-          progreso = '[Imagen en Base64]';
-          comentario = imagenBase64; // la guardamos en comentario
-        } else {
-          progreso = "N/A";
-          comentario = "Juego No Participado";
-        }
-        break;
-      }
-
-      case 'Memoria': {
-        const key = `memory-${partidaId}-${equipoNumero}-${config.currentIndex}`;
-        const game = memoryGames[key];
-        if (game) {
-          const matched = game.state.matchedPairs;
-          const total = game.config.pairsCount;
-          progreso = `${matched}/${total}`;
-        } else {
-          progreso = "N/A";
-          comentario = "Juego No Participado";
-        }
-        break;
-      }
-
-      case 'Rompecabezas': {
-        const key = `puzzle-${partidaId}-${equipoNumero}`;
-        const game = puzzleGames[key];
-        if (game) {
-          progreso = `${game.state.progress}%`;
-        } else {
-          progreso = "N/A";
-          comentario = "Juego No Participado";
-        }
-        break;
-      }
-    }
-
-    resultados.push({
-      partidaId,
-      equipoNumero,
-      juegoNumero: orden,
-      tipoJuego: tipo,
-      tiempo,
-      progreso,
-      tema,
-      comentario,
-      OrdenCompletado: ordenCompletado[equipoNumero] || null
-    });
-  }
-
-  console.log(`[RESULTADOS] Juego #${orden} - Tipo: ${tipo}`);
-  console.table(resultados);
-
-  return resultados;
-}
-
 
 async function evaluarLogrosGrupales(partidaId) {
   try {
@@ -2896,58 +2694,6 @@ async function evaluarLogrosGrupales(partidaId) {
     console.error('Error al evaluar logros grupales:', error);
   }
 }
-
-async function guardarResultadosFinalesEnBD(partidaId) {
-  try {
-    const pool = await poolPromise;
-    const partida = global.partidasConfig?.[partidaId];
-    const resultados = resultadosPorEquipo[partidaId];
-    const equipos = partida?.equipos;
-
-    if (!partida || !equipos || !resultados || resultados.length === 0) {
-      console.warn(`[RESULTADOS] No hay datos para partida ${partidaId}`);
-      return;
-    }
-
-    for (const [equipoStr, miembros] of Object.entries(equipos)) {
-      const equipo = parseInt(equipoStr);
-
-      const juegosEquipo = resultados.map(juego => {
-        const datos = juego.resultados?.[equipo];
-        if (!datos) return null;
-
-        const resultadoLimpio = {
-          tipoJuego: juego.tipoJuego,
-          comentario: datos.comentario || "",
-          progreso: datos.progreso || { actual: 0, total: 0 },
-          tiempo: datos.tiempo || 0
-        };
-
-        return resultadoLimpio;
-      }).filter(j => j); // quitar nulls
-
-      await pool.request()
-        .input('partidaId', sql.Int, partidaId)
-        .input('equipo', sql.Int, equipo)
-        .input('jsonResultados', sql.NVarChar(sql.MAX), JSON.stringify(juegosEquipo))
-        .input('comentario', sql.NVarChar(200), '')
-        .query(`
-          INSERT INTO Resultados_TB (Partida_ID_FK, Equipo, Resultados, Comentario)
-          VALUES (@partidaId, @equipo, @jsonResultados, @comentario)
-        `);
-    }
-
-    console.log(`[RESULTADOS] Guardados resultados en BD para partida ${partidaId}`);
-    
-    // Ahora sí generamos los logros
-    await evaluarLogrosGrupales(partidaId);
-    await evaluarLogrosPersonales(partidaId);
-
-  } catch (error) {
-    console.error(`[ERROR][guardarResultadosFinalesEnBD]`, error);
-  }
-}
-
 
 
 //-----------------------------------------------------------
