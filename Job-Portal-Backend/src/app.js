@@ -1168,6 +1168,12 @@ socket.on('nextGame', async (partidaId, callback) => {
       }
     });
 
+    Object.keys(puzzleGames).forEach(key => {
+      if (key.startsWith(`puzzle-${partidaId}-`)) {
+        delete puzzleGames[key];
+      }
+    });
+
     const config = global.partidasConfig[partidaId];
     
     // Verificar si ya se completaron todos los juegos
