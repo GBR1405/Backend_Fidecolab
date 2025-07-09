@@ -2133,22 +2133,17 @@ socket.on('initPuzzleGame', ({ partidaId, equipoNumero, difficulty, imageUrl }) 
   const size = sizeMap[difficulty.toLowerCase()] || 6;
 
   const pieces = generatePuzzlePieces(size, `${partidaId}-${equipoNumero}`);
-
   puzzleGames[gameId] = {
     pieces,
-    swapsLeft: size * size, // número de swaps permitidos
+    swapsLeft: size * size,
     progress: calculatePuzzleProgress(pieces),
     selectedPieces: []
   };
 
+  // Emitir estado inicial
   io.to(`team-${partidaId}-${equipoNumero}`).emit('puzzleGameState', {
-    state: {
-      pieces: puzzleGames[gameId].pieces,
-      progress: puzzleGames[gameId].progress
-    },
-    config: {
-      swapsLeft: puzzleGames[gameId].swapsLeft
-    }
+    state: { pieces, progress: puzzleGames[gameId].progress },
+    config: { swapsLeft: puzzleGames[gameId].swapsLeft }
   });
 });
 
@@ -2165,32 +2160,26 @@ socket.on('selectPuzzlePiece', ({ partidaId, equipoNumero, pieceId }) => {
   const game = puzzleGames[gameId];
   if (!game) return;
 
-  // Agregar la pieza a la selección
+  // Acumula selección
   if (!game.selectedPieces.includes(pieceId)) {
     game.selectedPieces.push(pieceId);
   }
 
-  // Si hay 2 piezas seleccionadas, intercambiarlas
+  // Al segundo click, intercambia
   if (game.selectedPieces.length === 2) {
     const [id1, id2] = game.selectedPieces;
     const p1 = game.pieces.find(p => p.id === id1);
     const p2 = game.pieces.find(p => p.id === id2);
-
     if (p1 && p2) {
-      // Intercambiar posiciones
       [p1.currentRow, p2.currentRow] = [p2.currentRow, p1.currentRow];
       [p1.currentCol, p2.currentCol] = [p2.currentCol, p1.currentCol];
+      game.swapsLeft = Math.max(0, game.swapsLeft - 1);
+      game.progress = calculatePuzzleProgress(game.pieces);
     }
-
-    // Actualizar progreso y reducir swaps
-    game.progress = calculatePuzzleProgress(game.pieces);
-    if (game.swapsLeft > 0) game.swapsLeft -= 1;
-
-    // Reset selección
     game.selectedPieces = [];
   }
 
-  // Emitir actualización al equipo
+  // Emitir a todos los clientes de ese equipo
   io.to(`team-${partidaId}-${equipoNumero}`).emit('puzzleUpdate', {
     pieces: game.pieces,
     selected: game.selectedPieces,
@@ -2200,11 +2189,13 @@ socket.on('selectPuzzlePiece', ({ partidaId, equipoNumero, pieceId }) => {
 });
 
 socket.on('requestPuzzleState', ({ partidaId, equipoNumero }) => {
-  const currentIndex = global.partidasConfig?.[partidaId]?.currentIndex ?? 0;
-  const gameId = `puzzle-${partidaId}-${equipoNumero}-${currentIndex}`;
-  if (puzzleGames[gameId]) {
-    socket.emit('puzzleGameState', puzzleGames[gameId]);
-  }
+  const gameId = `puzzle-${partidaId}-${equipoNumero}`;
+  const game = puzzleGames[gameId];
+  if (!game) return;
+  socket.emit('puzzleGameState', {
+    state: { pieces: game.pieces, progress: game.progress },
+    config: { swapsLeft: game.swapsLeft }
+  });
 });
 
 
