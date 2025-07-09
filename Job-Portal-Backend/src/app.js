@@ -2189,54 +2189,58 @@ socket.on('syncPuzzleGame', ({ partidaId, equipoNumero }) => {
 });
 
 socket.on('selectPuzzlePiece', ({ partidaId, equipoNumero, pieceId, userId }) => {
-  const key = `puzzle-${partidaId}-${equipoNumero}`;
-  const game = puzzleGames[key];
+  const gameId = `puzzle-${partidaId}-${equipoNumero}`;
+  const game = puzzleGames[gameId];
+
   if (!game) return;
 
-  const selected = game.state.selected;
+  // Obtener piezas seleccionadas
+  if (!game.selectedPieces) game.selectedPieces = [];
+  game.selectedPieces.push(pieceId);
 
-  // Desmarcar si hace clic en la misma
-  if (selected.includes(pieceId)) {
-    game.state.selected = selected.filter(id => id !== pieceId);
-    return socket.emit('puzzleUpdate', game.state);
-  }
+  // Si hay 2 piezas seleccionadas, intercambiarlas
+  if (game.selectedPieces.length === 2) {
+    const [firstId, secondId] = game.selectedPieces;
+    const firstPiece = game.pieces.find(p => p.id === firstId);
+    const secondPiece = game.pieces.find(p => p.id === secondId);
 
-  game.state.selected.push(pieceId);
-
-  // Si hay 2 piezas seleccionadas, hacer swap
-  if (game.state.selected.length === 2) {
-    const [id1, id2] = game.state.selected;
-    const p1 = game.state.pieces.find(p => p.id === id1);
-    const p2 = game.state.pieces.find(p => p.id === id2);
-
-    if (p1 && p2 && game.config.swapsLeft > 0) {
-      // Intercambiar posición actual
-      [p1.currentRow, p2.currentRow] = [p2.currentRow, p1.currentRow];
-      [p1.currentCol, p2.currentCol] = [p2.currentCol, p1.currentCol];
-      game.config.swapsLeft--;
-
-      // Calcular progreso
-      game.state.progress = calculatePuzzleProgress(game.state.pieces);
-
-      if (game.state.progress === 100 && !gameTeamTimestamps[partidaId]?.[equipoNumero]?.completedAt) {
-        gameTeamTimestamps[partidaId][equipoNumero].completedAt = new Date();
-      }
-
+    if (firstPiece && secondPiece) {
+      // Swap posiciones
+      const tempRow = firstPiece.currentRow;
+      const tempCol = firstPiece.currentCol;
+      firstPiece.currentRow = secondPiece.currentRow;
+      firstPiece.currentCol = secondPiece.currentCol;
+      secondPiece.currentRow = tempRow;
+      secondPiece.currentCol = tempCol;
     }
 
-    game.state.selected = []; // Limpiar selección
+    // Limpiar selección
+    game.selectedPieces = [];
+
+    // Recalcular progreso
+    const progress = calculatePuzzleProgress(game.pieces);
+
+    // Actualizar progreso del equipo
+    if (!gameProgress[partidaId]) gameProgress[partidaId] = {};
+    if (!gameProgress[partidaId][equipoNumero]) gameProgress[partidaId][equipoNumero] = {};
+    gameProgress[partidaId][equipoNumero]['Rompecabezas'] = progress;
+
+    // Enviar actualización a todos los del equipo
+    io.to(`team-${partidaId}-${equipoNumero}`).emit('puzzleUpdate', {
+      pieces: game.pieces,
+      selected: [],
+      swapsLeft: game.swapsLeft,
+      progress
+    });
+  } else {
+    // Enviar selección parcial
+    io.to(`team-${partidaId}-${equipoNumero}`).emit('puzzleUpdate', {
+      pieces: game.pieces,
+      selected: game.selectedPieces,
+      swapsLeft: game.swapsLeft,
+      progress: calculatePuzzleProgress(game.pieces)
+    });
   }
-
-  // Emitir actualización a todos del equipo
-  io.to(`team-${partidaId}-${equipoNumero}`).emit('puzzleUpdate', {
-    pieces: game.state.pieces,
-    selected: game.state.selected,
-    swapsLeft: game.config.swapsLeft,
-    progress: game.state.progress
-  });
-
-  // Actualizar barra de progreso general
-  updateTeamProgress(partidaId, equipoNumero, 'Rompecabezas', game.state.progress);
 });
 
 socket.on('requestPuzzleState', ({ partidaId, equipoNumero }) => {
