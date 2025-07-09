@@ -1678,37 +1678,50 @@ socket.on('startHangmanVote', ({ partidaId, equipoNumero, letra, userId }) => {
 function finalizarVotacion(partidaId, equipoNumero) {
   const voteKey = `${partidaId}-${equipoNumero}`;
   const votacion = hangmanVotes[voteKey];
-  
+
   if (!votacion) return;
-  
-  // Calcular letra con más votos
-  let letraGanadora = null;
-  let maxVotos = 0;
-  
-  Object.entries(votacion.votes).forEach(([letra, userIds]) => {
-    if (userIds.length > maxVotos) {
-      maxVotos = userIds.length;
-      letraGanadora = letra;
-    }
-  });
-  
+
+  const votos = votacion.votes;
+
+  // Obtener letras con sus cantidades de votos
+  const letrasConVotos = Object.entries(votos)
+    .map(([letra, userIds]) => ({ letra, cantidad: userIds.length }))
+    .filter(entry => entry.cantidad > 0);
+
+  // Si nadie votó, no hacer nada
+  if (letrasConVotos.length === 0) {
+    io.to(`team-${partidaId}-${equipoNumero}`).emit('hangmanVoteEnded', {
+      letraGanadora: null,
+      votos
+    });
+    delete hangmanVotes[voteKey];
+    return;
+  }
+
+  // Ordenar por cantidad de votos descendente
+  letrasConVotos.sort((a, b) => b.cantidad - a.cantidad);
+
+  const [top1, top2] = letrasConVotos;
+
+  // Verificar empate
+  const letraGanadora = (top2 && top1.cantidad === top2.cantidad) ? null : top1.letra;
+
   // Emitir resultado
   io.to(`team-${partidaId}-${equipoNumero}`).emit('hangmanVoteEnded', {
     letraGanadora,
-    votos: votacion.votes
+    votos
   });
-  
-  // Si hay letra ganadora, procesarla
+
+  // Si hay letra ganadora, enviarla al flujo de guessLetter
   if (letraGanadora) {
-    // Emitir directamente el guessLetter desde el servidor
-    io.to(`team-${partidaId}-${equipoNumero}`).emit('guessLetter', { 
-      partidaId, 
-      equipoNumero, 
-      letra: letraGanadora 
+    io.to(`team-${partidaId}-${equipoNumero}`).emit('guessLetter', {
+      partidaId,
+      equipoNumero,
+      letra: letraGanadora
     });
   }
-  
-  // Limpiar votación
+
+  // Limpiar estado
   delete hangmanVotes[voteKey];
 }
 
