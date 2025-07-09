@@ -121,6 +121,7 @@ const gameTimers = {};
 
 const memoryGames = {}; // {partidaId: {equipoNumero: {config, state}}}
 const hangmanGames = {};
+const hangmanVotes = {};
 const puzzleGames = {};
 const drawingGames = {}; // {partidaId: {equipoNumero: {canvasState, imageData}}}
 const drawingDemonstrations = new Map(); // Usamos Map para mejor gestión
@@ -137,6 +138,7 @@ const drawingStates = {};
 const tintaStates = {};
 
 const gameTeamTimestamps = {};
+
 
 const PUZZLE_CONFIG = {
   'Fácil': { size: 3, pieceSize: 150 },
@@ -1632,6 +1634,70 @@ socket.on('guessLetter', ({ partidaId, equipoNumero, letra }) => {
   } catch (error) {
     console.error('Error al adivinar letra:', error);
     socket.emit('hangmanGameError', { message: error.message });
+  }
+});
+
+socket.on('startHangmanVote', ({ partidaId, equipoNumero, letter, userId }) => {
+  const voteKey = `${partidaId}-${equipoNumero}`;
+  
+  // Si ya hay una votación en curso, solo agregar el voto
+  if (hangmanVotes[voteKey]) {
+    if (!hangmanVotes[voteKey].votes[userId]) {
+      hangmanVotes[voteKey].votes[userId] = true;
+      io.to(`team-${partidaId}-${equipoNumero}`).emit('hangmanVoteUpdate', {
+        letter: hangmanVotes[voteKey].letter,
+        votes: Object.keys(hangmanVotes[voteKey].votes).length,
+        timeLeft: 5 // Siempre 5 segundos para simplificar
+      });
+    }
+    return;
+  }
+  
+  // Crear nueva votación
+  hangmanVotes[voteKey] = {
+    letter,
+    votes: { [userId]: true },
+    timer: setTimeout(() => {
+      const voteCount = Object.keys(hangmanVotes[voteKey].votes).length;
+      const gameKey = `hangman-${partidaId}-${equipoNumero}`;
+      
+      // Solo procesar si el juego aún existe
+      if (hangmanGames[gameKey] && !hangmanGames[gameKey].state.juegoTerminado) {
+        io.to(`team-${partidaId}-${equipoNumero}`).emit('hangmanVoteEnd', {
+          letter,
+          accepted: voteCount > 0
+        });
+        
+        if (voteCount > 0) {
+          // Procesar la letra votada
+          socket.emit('guessLetter', { partidaId, equipoNumero, letra: letter });
+        }
+      }
+      
+      delete hangmanVotes[voteKey];
+    }, 5000)
+  };
+  
+  io.to(`team-${partidaId}-${equipoNumero}`).emit('hangmanVoteStart', {
+    letter,
+    votes: 1,
+    timeLeft: 5
+  });
+});
+
+// Evento para votar por una letra
+socket.on('voteHangmanLetter', ({ partidaId, equipoNumero, letter, userId }) => {
+  const voteKey = `${partidaId}-${equipoNumero}`;
+  
+  if (hangmanVotes[voteKey] && hangmanVotes[voteKey].letter === letter) {
+    if (!hangmanVotes[voteKey].votes[userId]) {
+      hangmanVotes[voteKey].votes[userId] = true;
+      io.to(`team-${partidaId}-${equipoNumero}`).emit('hangmanVoteUpdate', {
+        letter,
+        votes: Object.keys(hangmanVotes[voteKey].votes).length,
+        timeLeft: 5 // Simplificado, podrías calcular el tiempo real
+      });
+    }
   }
 });
 
