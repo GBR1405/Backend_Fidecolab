@@ -139,6 +139,7 @@ const tintaStates = {};
 
 const gameTeamTimestamps = {};
 
+const VOTING_TIME = 5000;
 
 const PUZZLE_CONFIG = {
   'Fácil': { size: 3, pieceSize: 150 },
@@ -1637,67 +1638,89 @@ socket.on('guessLetter', ({ partidaId, equipoNumero, letra }) => {
   }
 });
 
-socket.on('startHangmanVote', ({ partidaId, equipoNumero, letter, userId }) => {
+socket.on('startHangmanVote', ({ partidaId, equipoNumero, letra, userId }) => {
+  const gameId = `hangman-${partidaId}-${equipoNumero}`;
   const voteKey = `${partidaId}-${equipoNumero}`;
   
-  // Si ya hay una votación en curso, solo agregar el voto
-  if (hangmanVotes[voteKey]) {
-    if (!hangmanVotes[voteKey].votes[userId]) {
-      hangmanVotes[voteKey].votes[userId] = true;
-      io.to(`team-${partidaId}-${equipoNumero}`).emit('hangmanVoteUpdate', {
-        letter: hangmanVotes[voteKey].letter,
-        votes: Object.keys(hangmanVotes[voteKey].votes).length,
-        timeLeft: 5 // Siempre 5 segundos para simplificar
-      });
-    }
-    return;
+  // Si no hay votación en curso, iniciar una nueva
+  if (!hangmanVotes[voteKey]) {
+    hangmanVotes[voteKey] = {
+      votes: {},
+      timer: null,
+      active: true
+    };
+    
+    // Emitir a todos que comienza la votación
+    io.to(`team-${partidaId}-${equipoNumero}`).emit('hangmanVoteStarted', {
+      letra,
+      iniciador: userId,
+      tiempoRestante: VOTING_TIME
+    });
+    
+    // Configurar temporizador
+    hangmanVotes[voteKey].timer = setTimeout(() => {
+      finalizarVotacion(partidaId, equipoNumero);
+    }, VOTING_TIME);
   }
   
-  // Crear nueva votación
-  hangmanVotes[voteKey] = {
-    letter,
-    votes: { [userId]: true },
-    timer: setTimeout(() => {
-      const voteCount = Object.keys(hangmanVotes[voteKey].votes).length;
-      const gameKey = `hangman-${partidaId}-${equipoNumero}`;
-      
-      // Solo procesar si el juego aún existe
-      if (hangmanGames[gameKey] && !hangmanGames[gameKey].state.juegoTerminado) {
-        io.to(`team-${partidaId}-${equipoNumero}`).emit('hangmanVoteEnd', {
-          letter,
-          accepted: voteCount > 0
-        });
-        
-        if (voteCount > 0) {
-          // Procesar la letra votada
-          socket.emit('guessLetter', { partidaId, equipoNumero, letra: letter });
-        }
-      }
-      
-      delete hangmanVotes[voteKey];
-    }, 5000)
-  };
+  // Registrar voto (pueden votar varias veces, solo cuenta el último voto)
+  hangmanVotes[voteKey].votes[userId] = letra;
   
-  io.to(`team-${partidaId}-${equipoNumero}`).emit('hangmanVoteStart', {
-    letter,
-    votes: 1,
-    timeLeft: 5
+  // Emitir actualización de votos a todos
+  io.to(`team-${partidaId}-${equipoNumero}`).emit('hangmanVoteUpdate', {
+    votes: hangmanVotes[voteKey].votes
   });
 });
 
-// Evento para votar por una letra
-socket.on('voteHangmanLetter', ({ partidaId, equipoNumero, letter, userId }) => {
+function finalizarVotacion(partidaId, equipoNumero) {
   const voteKey = `${partidaId}-${equipoNumero}`;
+  const votacion = hangmanVotes[voteKey];
   
-  if (hangmanVotes[voteKey] && hangmanVotes[voteKey].letter === letter) {
-    if (!hangmanVotes[voteKey].votes[userId]) {
-      hangmanVotes[voteKey].votes[userId] = true;
-      io.to(`team-${partidaId}-${equipoNumero}`).emit('hangmanVoteUpdate', {
-        letter,
-        votes: Object.keys(hangmanVotes[voteKey].votes).length,
-        timeLeft: 5 // Simplificado, podrías calcular el tiempo real
-      });
+  if (!votacion) return;
+  
+  // Calcular letra con más votos
+  const conteo = {};
+  Object.values(votacion.votes).forEach(letra => {
+    conteo[letra] = (conteo[letra] || 0) + 1;
+  });
+  
+  let letraGanadora = null;
+  let maxVotos = 0;
+  
+  Object.entries(conteo).forEach(([letra, votos]) => {
+    if (votos > maxVotos) {
+      maxVotos = votos;
+      letraGanadora = letra;
     }
+  });
+  
+  // Emitir resultado
+  io.to(`team-${partidaId}-${equipoNumero}`).emit('hangmanVoteEnded', {
+    letraGanadora,
+    votos: votacion.votes
+  });
+  
+  // Si hay letra ganadora, procesarla
+  if (letraGanadora) {
+    io.to(`team-${partidaId}-${equipoNumero}`).emit('guessLetter', { 
+      partidaId, 
+      equipoNumero, 
+      letra: letraGanadora 
+    });
+  }
+  
+  // Limpiar votación
+  clearTimeout(votacion.timer);
+  delete hangmanVotes[voteKey];
+}
+
+// Agregar también un evento para cancelar votación si el juego termina
+socket.on('cancelHangmanVote', ({ partidaId, equipoNumero }) => {
+  const voteKey = `${partidaId}-${equipoNumero}`;
+  if (hangmanVotes[voteKey]) {
+    clearTimeout(hangmanVotes[voteKey].timer);
+    delete hangmanVotes[voteKey];
+    io.to(`team-${partidaId}-${equipoNumero}`).emit('hangmanVoteCancelled');
   }
 });
 
