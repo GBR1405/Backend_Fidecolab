@@ -167,10 +167,10 @@ const GAME_TIMES = {
 
 // Función para calcular el progreso del rompecabezas
 
-function generatePuzzlePieces(size, imageUrl, seed) {
+function generatePuzzlePieces(size, seed) {
   const total = size * size;
   const positions = [];
-  
+
   for (let r = 0; r < size; r++) {
     for (let c = 0; c < size; c++) {
       positions.push({ row: r, col: c });
@@ -277,7 +277,7 @@ function generateConsistentId(partidaId, equipoNumero, row, col) {
 
 // 3. Función para generar el puzzle de forma consistente
 function generatePuzzle(partidaId, equipoNumero, difficulty, imageUrl) {
-  const sizes = { 'facil': 5, 'normal': 7, 'dificil': 10 };
+  const sizes = { 'facil': 5, 'normal': 7, 'dificil': 8 };
   const size = sizes[difficulty.toLowerCase()] || 5;
   const pieceSize = 100;
   const pieces = [];
@@ -1189,7 +1189,7 @@ socket.on('nextGame', async (partidaId, callback) => {
      const nextGame = config.juegos[config.currentIndex + 1];
         if (nextGame?.tipo === 'Rompecabezas') {
           Object.keys(puzzleGames).forEach(key => {
-            if (key.startsWith(`puzzle-${partidaId}-`)) {
+            if (key.startsWith(`puzzle-${partidaId}-`) && key.includes(`-${currentIndex}`)) {
               delete puzzleGames[key];
             }
           });
@@ -2134,47 +2134,59 @@ function getAllTeamProgress(partidaId) {
 // ROMPECABEZAS NUEVO 2.0 -----------------------
 
 socket.on('initPuzzleGame', ({ partidaId, equipoNumero, difficulty, imageUrl }) => {
-  const key = `puzzle-${partidaId}-${equipoNumero}`;
-  
-  // Si ya existe un puzzle para este equipo, no generar uno nuevo
-  if (puzzleGames[key]) {
-    socket.emit('puzzleGameState', puzzleGames[key]);
-    return;
-  }
+  try {
+    const currentIndex = global.partidasConfig?.[partidaId]?.currentIndex ?? 0;
+    const gameId = `puzzle-${partidaId}-${equipoNumero}-${currentIndex}`;
 
-  const dif = difficulty.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-  const sizeMap = { 'facil': 6, 'normal': 7, 'dificil': 8 };
-  const size = sizeMap[dif] || 6;
-  
-  // Semilla consistente basada en partida y equipo (sin timestamp)
-  const seed = `${partidaId}-${equipoNumero}`;
-  const pieces = generatePuzzlePieces(size, imageUrl, seed);
-
-  puzzleGames[key] = {
-    config: {
-      rows: size,
-      cols: size,
-      swapsLeft: size * size + 20,
-      imageUrl,
-      difficulty: dif
-    },
-    state: {
-      pieces,
-      selected: [],
-      progress: calculatePuzzleProgress(pieces)
+    // Si ya existe, solo reenviar
+    if (puzzleGames[gameId]) {
+      socket.emit('puzzleGameState', puzzleGames[gameId]);
+      return;
     }
-  };
 
-  // Registrar timestamp de inicio
-  if (!gameTeamTimestamps[partidaId]) gameTeamTimestamps[partidaId] = {};
-  if (!gameTeamTimestamps[partidaId][equipoNumero]) {
-    gameTeamTimestamps[partidaId][equipoNumero] = {
-      startedAt: new Date(),
-      completedAt: null
+    // Convertir dificultad correctamente (asegura nombres uniformes)
+    const difKey = difficulty.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, '');
+
+    const size = {
+      'facil': 6,
+      'normal': 7,
+      'dificil': 8
+    }[difKey] || 6;
+
+    const seed = `${partidaId}-${equipoNumero}-${currentIndex}`;
+    const pieces = generatePuzzlePieces(size, seed);
+
+    const game = {
+      config: {
+        size,
+        swapsLeft: size * size + 20,
+        difficulty,
+        imageUrl
+      },
+      state: {
+        pieces,
+        selected: [],
+        progress: calculatePuzzleProgress(pieces)
+      }
     };
-  }
 
-  io.to(`team-${partidaId}-${equipoNumero}`).emit('puzzleGameState', puzzleGames[key]);
+    puzzleGames[gameId] = game;
+
+    // Inicializar timestamps si no existen
+    if (!gameTeamTimestamps[partidaId]) gameTeamTimestamps[partidaId] = {};
+    if (!gameTeamTimestamps[partidaId][equipoNumero]) {
+      gameTeamTimestamps[partidaId][equipoNumero] = {
+        startedAt: new Date(),
+        completedAt: null
+      };
+    }
+
+    io.to(`team-${partidaId}-${equipoNumero}`).emit('puzzleGameState', game);
+
+  } catch (error) {
+    console.error('Error en initPuzzleGame:', error);
+    socket.emit('puzzleGameError', { message: error.message });
+  }
 });
 
 // Nuevo evento para sincronización al reconectar
