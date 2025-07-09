@@ -167,7 +167,8 @@ const GAME_TIMES = {
 
 // Función para calcular el progreso del rompecabezas
 
-function generatePuzzlePieces(size, seed) {
+// En app.js, modificar la función generatePuzzlePieces:
+function generatePuzzlePieces(size, imageUrl, seed) {
   const total = size * size;
   const positions = [];
 
@@ -1464,6 +1465,12 @@ socket.on('cleanPreviousGames', ({ partidaId }) => {
       }
     });
 
+    Object.keys(puzzleGames).forEach(key => {
+      if (key.startsWith(`puzzle-${partidaId}-`)) {
+        delete puzzleGames[key];
+      }
+    });
+
     // Opcional: Limpiar progresos también
     if (gameProgress[partidaId]) {
       gameProgress[partidaId] = {};
@@ -2129,38 +2136,33 @@ function getAllTeamProgress(partidaId) {
 
 socket.on('initPuzzleGame', ({ partidaId, equipoNumero, difficulty, imageUrl }) => {
   const normalized = difficulty
-  .normalize("NFD")                   // separa la “í” en “i” + diacrítico
-  .replace(/[\u0300-\u036f]/g, "")    // elimina los diacríticos (tildes)
-  .toLowerCase();                     // "Fácil" → "facil"
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
 
-  // 2. Define el map con claves “planas”
   const sizeMap = {
     facil: 6,
     normal: 7,
     dificil: 8
   };
 
-  // 3. Obtén el tamaño y el resto
   const size = sizeMap[normalized] || 6;
   const totalPieces = size * size;
   const maxSwaps = totalPieces + 20;
   const key = `puzzle-${partidaId}-${equipoNumero}`;
 
-  // Evitar regenerar si ya existe
-  if (puzzleGames[key]) {
-    socket.emit('puzzleGameState', puzzleGames[key]);
-    return;
-  }
+  // Forzar regeneración eliminando el estado anterior
+  delete puzzleGames[key];
 
   if (!gameTeamTimestamps[partidaId]) gameTeamTimestamps[partidaId] = {};
-    if (!gameTeamTimestamps[partidaId][equipoNumero]) {
-      gameTeamTimestamps[partidaId][equipoNumero] = {
-        startedAt: new Date(),
-        completedAt: null
-      };
-    }
+  if (!gameTeamTimestamps[partidaId][equipoNumero]) {
+    gameTeamTimestamps[partidaId][equipoNumero] = {
+      startedAt: new Date(),
+      completedAt: null
+    };
+  }
 
-  // Generar piezas revueltas con semilla
+  // Generar piezas con el tamaño correcto
   const seed = `${partidaId}-${equipoNumero}`;
   const pieces = generatePuzzlePieces(size, imageUrl, seed);
 
