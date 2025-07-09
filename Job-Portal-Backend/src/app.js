@@ -1569,18 +1569,6 @@ socket.on('guessLetter', ({ partidaId, equipoNumero, letra }) => {
     if (!game) throw new Error('Juego no encontrado');
     if (game.state.juegoTerminado) return;
 
-    if (!game) return;
-    if (game.state.juegoTerminado) {
-      // Cancelar cualquier votación pendiente
-      const voteKey = `${partidaId}-${equipoNumero}`;
-      if (hangmanVotes[voteKey]) {
-        clearTimeout(hangmanVotes[voteKey].timer);
-        delete hangmanVotes[voteKey];
-        io.to(`team-${partidaId}-${equipoNumero}`).emit('hangmanVoteCancelled');
-      }
-      return;
-    }
-
     // Validar letra
     const letraNormalizada = letra.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase();
     if (!/^[A-Z]$/.test(letraNormalizada)) {
