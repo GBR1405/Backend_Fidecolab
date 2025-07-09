@@ -2126,38 +2126,46 @@ function getAllTeamProgress(partidaId) {
 
 socket.on('initPuzzleGame', ({ partidaId, equipoNumero, difficulty, imageUrl }) => {
   const dif = difficulty.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-  const sizeMap = { 'facil': 6, 'normal': 7, 'dificil': 8 }; // Asegúrate que estos tamaños coincidan con el frontend
+  const sizeMap = { 'facil': 6, 'normal': 7, 'dificil': 8 };
   const size = sizeMap[dif] || 6;
   const totalPieces = size * size;
-  const maxSwaps = totalPieces + 20;
-  const key = `puzzle-${partidaId}-${equipoNumero}`;
-
-  // Limpiar cualquier estado anterior
-  if (puzzleGames[key]) {
-    delete puzzleGames[key];
-  }
-
-  // Generar semilla única para este puzzle
-  const seed = `${partidaId}-${equipoNumero}-${Date.now()}`;
+  const maxSwaps = totalPieces * 2; // Más swaps para dificultad
   
-  // Generar piezas con el tamaño correcto
-  const pieces = generatePuzzlePieces(size, imageUrl, seed);
-
-  puzzleGames[key] = {
-    config: {
-      rows: size,
-      cols: size,
-      swapsLeft: maxSwaps,
-      imageUrl,
-      difficulty: dif
-    },
-    state: {
-      pieces,
-      selected: [],
-      progress: calculatePuzzleProgress(pieces)
+  const key = `puzzle-${partidaId}-${equipoNumero}`;
+  
+  // Solo inicializar si no existe ya un puzzle para este equipo
+  if (!puzzleGames[key]) {
+    const seed = `${partidaId}-${equipoNumero}`; // Semilla consistente basada en partida y equipo
+    
+    // Generar piezas con el tamaño correcto
+    const pieces = generatePuzzlePieces(size, imageUrl, seed);
+    
+    puzzleGames[key] = {
+      config: {
+        rows: size,
+        cols: size,
+        swapsLeft: maxSwaps,
+        imageUrl,
+        difficulty: dif
+      },
+      state: {
+        pieces,
+        selected: [],
+        progress: calculatePuzzleProgress(pieces)
+      }
+    };
+    
+    // Registrar tiempo de inicio
+    if (!gameTeamTimestamps[partidaId]) gameTeamTimestamps[partidaId] = {};
+    if (!gameTeamTimestamps[partidaId][equipoNumero]) {
+      gameTeamTimestamps[partidaId][equipoNumero] = {
+        startedAt: new Date(),
+        completedAt: null
+      };
     }
-  };
-
+  }
+  
+  // Enviar estado actual a todos los miembros del equipo
   io.to(`team-${partidaId}-${equipoNumero}`).emit('puzzleGameState', puzzleGames[key]);
 });
 
@@ -2171,7 +2179,12 @@ socket.on('selectPuzzlePiece', ({ partidaId, equipoNumero, pieceId, userId }) =>
   // Desmarcar si hace clic en la misma
   if (selected.includes(pieceId)) {
     game.state.selected = selected.filter(id => id !== pieceId);
-    return socket.emit('puzzleUpdate', game.state);
+    return io.to(`team-${partidaId}-${equipoNumero}`).emit('puzzleUpdate', {
+      pieces: game.state.pieces,
+      selected: game.state.selected,
+      swapsLeft: game.config.swapsLeft,
+      progress: game.state.progress
+    });
   }
 
   game.state.selected.push(pieceId);
@@ -2191,10 +2204,10 @@ socket.on('selectPuzzlePiece', ({ partidaId, equipoNumero, pieceId, userId }) =>
       // Calcular progreso
       game.state.progress = calculatePuzzleProgress(game.state.pieces);
 
+      // Marcar como completado si se terminó
       if (game.state.progress === 100 && !gameTeamTimestamps[partidaId]?.[equipoNumero]?.completedAt) {
         gameTeamTimestamps[partidaId][equipoNumero].completedAt = new Date();
       }
-
     }
 
     game.state.selected = []; // Limpiar selección
@@ -2212,14 +2225,15 @@ socket.on('selectPuzzlePiece', ({ partidaId, equipoNumero, pieceId, userId }) =>
   updateTeamProgress(partidaId, equipoNumero, 'Rompecabezas', game.state.progress);
 });
 
+
 socket.on('requestPuzzleState', ({ partidaId, equipoNumero }) => {
   const key = `puzzle-${partidaId}-${equipoNumero}`;
   
+  // Si no existe, crear uno nuevo con la configuración actual
   if (!puzzleGames[key]) {
-    // Si no existe, crear uno nuevo con la configuración actual
     const config = global.partidasConfig[partidaId]?.juegos.find(j => j.tipo === 'Rompecabezas');
     if (config) {
-      const seed = `${partidaId}-${equipoNumero}`; // Semilla estable (sin timestamp)
+      const seed = `${partidaId}-${equipoNumero}`;
       puzzleGames[key] = generarPuzzleDesdeConfig(config, seed);
     }
   }
@@ -2232,12 +2246,13 @@ socket.on('requestPuzzleState', ({ partidaId, equipoNumero }) => {
 function generarPuzzleDesdeConfig(config, seed) {
   const dif = config.dificultad.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
   const size = { 'facil': 6, 'normal': 7, 'dificil': 8 }[dif] || 6;
+  const totalPieces = size * size;
   
   return {
     config: {
       rows: size,
       cols: size,
-      swapsLeft: size * size + 20,
+      swapsLeft: totalPieces * 2, // Más swaps para dificultad
       imageUrl: config.tema,
       difficulty: dif
     },
