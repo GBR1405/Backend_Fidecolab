@@ -2128,21 +2128,20 @@ function getAllTeamProgress(partidaId) {
 // ROMPECABEZAS NUEVO 2.0 -----------------------
 
 socket.on('initPuzzleGame', ({ partidaId, equipoNumero, difficulty, imageUrl }) => {
-    const normalized = difficulty
-    .normalize("NFD")               // separa diacríticos
-    .replace(/[\u0300-\u036f]/g, "")// quita los diacríticos
-    .toLowerCase();                 // pasa a minúsculas
+  const normalized = difficulty
+  .normalize("NFD")                   // separa la “í” en “i” + diacrítico
+  .replace(/[\u0300-\u036f]/g, "")    // elimina los diacríticos (tildes)
+  .toLowerCase();                     // "Fácil" → "facil"
 
-  // 2. Mapa de tamaños con claves "planas"
+  // 2. Define el map con claves “planas”
   const sizeMap = {
     facil: 6,
     normal: 7,
     dificil: 8
   };
 
-  // 3. Obtener el tamaño
-  const gridSize = sizeMap[normalized] || 6;
-  const size = sizeMap[dif] || 6;
+  // 3. Obtén el tamaño y el resto
+  const size = sizeMap[normalized] || 6;
   const totalPieces = size * size;
   const maxSwaps = totalPieces + 20;
   const key = `puzzle-${partidaId}-${equipoNumero}`;
