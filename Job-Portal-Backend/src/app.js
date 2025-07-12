@@ -1955,7 +1955,7 @@ socket.on('getTeamDrawings', ({ partidaId, equipoNumero }, callback) => {
 
 socket.on('getAllDrawingsForProfessor', (partidaId, callback) => {
   const result = {};
-  
+
   for (const key in drawingGames) {
     if (key.startsWith(`drawing-${partidaId}-`)) {
       const [_, __, equipoStr] = key.split('-');
