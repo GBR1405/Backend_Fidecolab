@@ -1942,18 +1942,14 @@ socket.on('saveDrawing', ({ partidaId, equipoNumero, imageData }) => {
 });
 
 socket.on('getTeamDrawings', ({ partidaId, equipoNumero }, callback) => {
-  console.log(`Obteniendo dibujos para partida ${partidaId}, equipo ${equipoNumero}`);
-  const key = `${partidaId}-${equipoNumero}`;
   const game = drawingGames[partidaId]?.[equipoNumero];
-
-  if (!game) {
-    return callback({ success: false, message: 'Equipo no ha dibujado' });
+  if (!game || !game.canvasState || Object.keys(game.canvasState).length === 0) {
+    return callback({ success: false });
   }
 
   callback({
     success: true,
-    linesByUser: game.canvasState || {},
-    imageData: game.imageData || null
+    linesByUser: game.canvasState
   });
 });
 
