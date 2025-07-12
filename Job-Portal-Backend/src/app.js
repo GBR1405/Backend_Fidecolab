@@ -1942,6 +1942,7 @@ socket.on('saveDrawing', ({ partidaId, equipoNumero, imageData }) => {
 });
 
 socket.on('getTeamDrawings', ({ partidaId, equipoNumero }, callback) => {
+  console.log(`Obteniendo dibujos para partida ${partidaId}, equipo ${equipoNumero}`);
   const key = `${partidaId}-${equipoNumero}`;
   const game = drawingGames[partidaId]?.[equipoNumero];
 
