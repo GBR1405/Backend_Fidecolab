@@ -1953,6 +1953,30 @@ socket.on('getTeamDrawings', ({ partidaId, equipoNumero }, callback) => {
   });
 });
 
+socket.on('getTeamDrawingForProfessor', ({ partidaId, equipoNumero }, callback) => {
+  const key = `drawing-${partidaId}-${equipoNumero}`;
+  const game = drawingGames[key];
+
+  if (!game || !game.actions) {
+    return callback({ success: false });
+  }
+
+  // Transformar estructura: { userId: [paths] } → { userId: [Line objects] }
+  const canvasState = {};
+  for (const [userId, paths] of Object.entries(game.actions)) {
+    canvasState[userId] = paths.map(path => ({
+      points: path.points,
+      color: path.color,
+      strokeWidth: path.strokeWidth
+    }));
+  }
+
+  callback({
+    success: true,
+    linesByUser: canvasState
+  });
+});
+
 // 2. Evento para iniciar demostración - Versión mejorada
 socket.on('startDrawingDemo', (partidaId, callback) => {
   try {
