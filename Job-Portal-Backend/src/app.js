@@ -1953,28 +1953,31 @@ socket.on('getTeamDrawings', ({ partidaId, equipoNumero }, callback) => {
   });
 });
 
-socket.on('getTeamDrawingForProfessor', ({ partidaId, equipoNumero }, callback) => {
-  const key = `drawing-${partidaId}-${equipoNumero}`;
-  const game = drawingGames[key];
+socket.on('getAllDrawingsForProfessor', (partidaId, callback) => {
+  const result = {};
+  
+  for (const key in drawingGames) {
+    if (key.startsWith(`drawing-${partidaId}-`)) {
+      const [_, __, equipoStr] = key.split('-');
+      const equipoNumero = parseInt(equipoStr);
+      const game = drawingGames[key];
 
-  if (!game || !game.actions) {
-    return callback({ success: false });
+      if (!game || !game.actions) continue;
+
+      const canvasState = {};
+      for (const [userId, paths] of Object.entries(game.actions)) {
+        canvasState[userId] = paths.map(path => ({
+          points: path.points,
+          color: path.color,
+          strokeWidth: path.strokeWidth
+        }));
+      }
+
+      result[equipoNumero] = canvasState;
+    }
   }
 
-  // Transformar estructura: { userId: [paths] } → { userId: [Line objects] }
-  const canvasState = {};
-  for (const [userId, paths] of Object.entries(game.actions)) {
-    canvasState[userId] = paths.map(path => ({
-      points: path.points,
-      color: path.color,
-      strokeWidth: path.strokeWidth
-    }));
-  }
-
-  callback({
-    success: true,
-    linesByUser: canvasState
-  });
+  callback({ success: true, drawingsByTeam: result });
 });
 
 // 2. Evento para iniciar demostración - Versión mejorada
