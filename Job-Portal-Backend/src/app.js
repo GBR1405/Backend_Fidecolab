@@ -1941,6 +1941,21 @@ socket.on('saveDrawing', ({ partidaId, equipoNumero, imageData }) => {
   }
 });
 
+socket.on('getTeamDrawings', ({ partidaId, equipoNumero }, callback) => {
+  const key = `${partidaId}-${equipoNumero}`;
+  const game = drawingGames[partidaId]?.[equipoNumero];
+
+  if (!game) {
+    return callback({ success: false, message: 'Equipo no ha dibujado' });
+  }
+
+  callback({
+    success: true,
+    linesByUser: game.canvasState || {},
+    imageData: game.imageData || null
+  });
+});
+
 // 2. Evento para iniciar demostración - Versión mejorada
 socket.on('startDrawingDemo', (partidaId, callback) => {
   try {
