@@ -1851,19 +1851,17 @@ socket.on('getTeamDrawingLive', ({ partidaId, equipoNumero }, callback) => {
 
 socket.on('professorGetTeamDrawing', ({ partidaId, equipoNumero }, callback) => {
   try {
-    if (!professorDrawings.has(partidaId)) {
-      professorDrawings.set(partidaId, {});
+    if (!teamDrawings.has(partidaId)) {
+      return callback({ success: false, error: 'Partida no encontrada' });
     }
-
-    const partidaData = professorDrawings.get(partidaId);
-    const teamDrawing = partidaData[equipoNumero] || {};
-
-    callback({ 
-      success: true, 
-      drawing: teamDrawing,
-      equipoNumero,
-      partidaId
-    });
+    
+    const partidaData = teamDrawings.get(partidaId);
+    if (!partidaData.has(equipoNumero)) {
+      return callback({ success: true, drawing: {} });
+    }
+    
+    const drawing = partidaData.get(equipoNumero);
+    callback({ success: true, drawing });
   } catch (error) {
     console.error('Error en professorGetTeamDrawing:', error);
     callback({ success: false, error: error.message });
@@ -1955,6 +1953,13 @@ socket.on('drawingAction', ({ partidaId, equipoNumero, userId, action }) => {
       break;
   }
 
+    socket.emit('registerTeamDrawing', {
+      partidaId,
+      equipoNumero,
+      userId,
+      action
+    });
+
   // Emitir actualización solo al profesor
   io.to(`partida_${partidaId}`).emit('professorDrawingUpdate', {
     partidaId,
@@ -1962,6 +1967,49 @@ socket.on('drawingAction', ({ partidaId, equipoNumero, userId, action }) => {
     drawing: teamDrawing
   });
 });
+
+socket.on('registerTeamDrawing', ({ partidaId, equipoNumero, userId, action }) => {
+  try {
+    // Inicializar estructuras si no existen
+    if (!teamDrawings.has(partidaId)) {
+      teamDrawings.set(partidaId, new Map());
+    }
+    const partidaData = teamDrawings.get(partidaId);
+    
+    if (!partidaData.has(equipoNumero)) {
+      partidaData.set(equipoNumero, {});
+    }
+    const teamDrawing = partidaData.get(equipoNumero);
+    
+    if (!teamDrawing[userId]) {
+      teamDrawing[userId] = [];
+    }
+
+    // Procesar la acción de dibujo
+    switch (action.type) {
+      case 'pathStart':
+        teamDrawing[userId].push(action.path);
+        break;
+        
+      case 'pathUpdate':
+      case 'pathComplete':
+        const existingIndex = teamDrawing[userId].findIndex(p => p.id === action.path.id);
+        if (existingIndex >= 0) {
+          teamDrawing[userId][existingIndex] = action.path;
+        } else {
+          teamDrawing[userId].push(action.path);
+        }
+        break;
+        
+      case 'clear':
+        delete teamDrawing[userId];
+        break;
+    }
+  } catch (error) {
+    console.error('Error en registerTeamDrawing:', error);
+  }
+});
+
 
 
 socket.on('requestDrawingSync', ({ partidaId, equipoNumero }) => {
