@@ -1850,22 +1850,14 @@ socket.on('getTeamDrawingLive', ({ partidaId, equipoNumero }, callback) => {
 });
 
 socket.on('professorGetTeamDrawing', ({ partidaId, equipoNumero }, callback) => {
-  try {
-    if (!teamDrawings.has(partidaId)) {
-      return callback({ success: false, error: 'Partida no encontrada' });
-    }
-    
-    const partidaData = teamDrawings.get(partidaId);
-    if (!partidaData.has(equipoNumero)) {
-      return callback({ success: true, drawing: {} });
-    }
-    
-    const drawing = partidaData.get(equipoNumero);
-    callback({ success: true, drawing });
-  } catch (error) {
-    console.error('Error en professorGetTeamDrawing:', error);
-    callback({ success: false, error: error.message });
+  const key = `${partidaId}-${equipoNumero}`;
+  const dibujo = drawingGames?.[partidaId]?.[equipoNumero]?.canvasState || null;
+
+  if (!dibujo) {
+    return callback({ success: false, error: 'Dibujo no encontrado' });
   }
+
+  return callback({ success: true, drawing: dibujo });
 });
 
 socket.on('drawingAction', ({ partidaId, equipoNumero, userId, action }) => {
@@ -1949,31 +1941,7 @@ socket.on('drawingAction', ({ partidaId, equipoNumero, userId, action }) => {
   }
 });
 
-// Evento para obtener dibujos del equipo
-socket.on('professorGetTeamDrawing', ({ partidaId, equipoNumero }, callback) => {
-  try {
-    // Convertir partidaId a número
-    const numPartidaId = Number(partidaId);
-    if (isNaN(numPartidaId)) {
-      return callback({ error: 'ID de partida inválido' });
-    }
 
-    if (!teamDrawings.has(numPartidaId)) {
-      return callback({ success: false, error: 'Partida no encontrada' });
-    }
-    
-    const partidaData = teamDrawings.get(numPartidaId);
-    if (!partidaData.has(equipoNumero)) {
-      return callback({ success: true, drawing: {} });
-    }
-    
-    const drawing = partidaData.get(equipoNumero);
-    callback({ success: true, drawing });
-  } catch (error) {
-    console.error('Error en professorGetTeamDrawing:', error);
-    callback({ success: false, error: error.message });
-  }
-});
 
 // Limpiar datos cuando finaliza la partida
 socket.on('cleanDrawingData', (partidaId) => {
