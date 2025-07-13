@@ -1875,6 +1875,27 @@ socket.on('drawingAction', ({ partidaId, equipoNumero, userId, action }) => {
     userId,
     ...action
   });
+
+  switch (action.type) {
+      case 'pathStart':
+      case 'pathUpdate':
+      case 'pathComplete':
+        if (!teamDrawing[userId]) teamDrawing[userId] = [];
+        teamDrawing[userId].push(action.path);
+        break;
+      case 'clear':
+        delete teamDrawing[userId];
+        break;
+    }
+
+    // Transmitir a la sala del profesor
+    io.to(`partida_${partidaId}`).emit('drawingUpdate', {
+      partidaId,
+      equipoNumero,
+      userId,
+      action
+    });
+
 });
 
 socket.on('requestDrawingSync', ({ partidaId, equipoNumero }) => {
@@ -1942,42 +1963,39 @@ socket.on('saveDrawing', ({ partidaId, equipoNumero, imageData }) => {
 });
 
 socket.on('getTeamDrawings', ({ partidaId, equipoNumero }, callback) => {
-  const game = drawingGames[partidaId]?.[equipoNumero];
-  if (!game || !game.canvasState || Object.keys(game.canvasState).length === 0) {
-    return callback({ success: false });
-  }
+  try {
+    const partidaData = teamDrawings.get(partidaId);
+    if (!partidaData) return callback({ success: false });
 
-  callback({
-    success: true,
-    linesByUser: game.canvasState
-  });
+    const teamData = partidaData.get(equipoNumero);
+    if (!teamData) return callback({ success: false });
+
+    callback({ 
+      success: true,
+      linesByUser: teamData
+    });
+  } catch (error) {
+    console.error('Error getting team drawings:', error);
+    callback({ success: false, error: error.message });
+  }
 });
 
 socket.on('getAllDrawingsForProfessor', (partidaId, callback) => {
-  const result = {};
-
-  for (const key in drawingGames) {
-    if (key.startsWith(`drawing-${partidaId}-`)) {
-      const [_, __, equipoStr] = key.split('-');
-      const equipoNumero = parseInt(equipoStr);
-      const game = drawingGames[key];
-
-      if (!game || !game.actions) continue;
-
-      const canvasState = {};
-      for (const [userId, paths] of Object.entries(game.actions)) {
-        canvasState[userId] = paths.map(path => ({
-          points: path.points,
-          color: path.color,
-          strokeWidth: path.strokeWidth
-        }));
+  try {
+    const result = {};
+    const partidaData = teamDrawings.get(partidaId);
+    
+    if (partidaData) {
+      for (const [equipoNumero, drawings] of partidaData) {
+        result[equipoNumero] = drawings;
       }
-
-      result[equipoNumero] = canvasState;
     }
-  }
 
-  callback({ success: true, drawingsByTeam: result });
+    callback({ success: true, drawingsByTeam: result });
+  } catch (error) {
+    console.error('Error getting all drawings:', error);
+    callback({ success: false, error: error.message });
+  }
 });
 
 // 2. Evento para iniciar demostración - Versión mejorada
