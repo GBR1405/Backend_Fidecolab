@@ -139,6 +139,7 @@ const tintaStates = {};
 
 const gameTeamTimestamps = {};
 const liveDrawings = new Map();
+const professorDrawings = new Map();
 
 const VOTING_TIME = 5000;
 
@@ -1848,9 +1849,31 @@ socket.on('getTeamDrawingLive', ({ partidaId, equipoNumero }, callback) => {
   }
 });
 
+socket.on('professorGetTeamDrawing', ({ partidaId, equipoNumero }, callback) => {
+  try {
+    if (!professorDrawings.has(partidaId)) {
+      professorDrawings.set(partidaId, {});
+    }
+
+    const partidaData = professorDrawings.get(partidaId);
+    const teamDrawing = partidaData[equipoNumero] || {};
+
+    callback({ 
+      success: true, 
+      drawing: teamDrawing,
+      equipoNumero,
+      partidaId
+    });
+  } catch (error) {
+    console.error('Error en professorGetTeamDrawing:', error);
+    callback({ success: false, error: error.message });
+  }
+});
+
 socket.on('drawingAction', ({ partidaId, equipoNumero, userId, action }) => {
   const gameId = `drawing-${partidaId}-${equipoNumero}`;
 
+  // ⚠️ Mantenemos exactamente el mismo código original
   if (!drawingGames[gameId]) {
     drawingGames[gameId] = {
       actions: {},
@@ -1883,19 +1906,60 @@ socket.on('drawingAction', ({ partidaId, equipoNumero, userId, action }) => {
       delete drawingGames[gameId].actions[userId];
       drawingGames[gameId].tintaStates[userId] = 5000;
 
-      // Notificar a todos que se borró
       io.to(`team-${partidaId}-${equipoNumero}`).emit('drawingAction', {
         type: 'clear',
         userId,
         tinta: 5000
       });
-      return; // ⚠️ Evita doble emisión
+      return;
   }
 
-  // ✅ Esta es la forma correcta
   io.to(`team-${partidaId}-${equipoNumero}`).emit('drawingAction', {
     userId,
     ...action
+  });
+
+  // 🔄 Nueva parte: Sincronización paralela para el profesor
+  if (!professorDrawings.has(partidaId)) {
+    professorDrawings.set(partidaId, {});
+  }
+
+  const partidaData = professorDrawings.get(partidaId);
+  
+  if (!partidaData[equipoNumero]) {
+    partidaData[equipoNumero] = {};
+  }
+
+  const teamDrawing = partidaData[equipoNumero];
+
+  // Sincronizamos los cambios con la estructura del profesor
+  switch (action.type) {
+    case 'pathStart':
+      if (!teamDrawing[userId]) teamDrawing[userId] = [];
+      teamDrawing[userId].push(action.path);
+      break;
+
+    case 'pathUpdate':
+    case 'pathComplete':
+      if (!teamDrawing[userId]) teamDrawing[userId] = [];
+      const existingIndex = teamDrawing[userId].findIndex(p => p.id === action.path.id);
+      if (existingIndex >= 0) {
+        teamDrawing[userId][existingIndex] = action.path;
+      } else {
+        teamDrawing[userId].push(action.path);
+      }
+      break;
+
+    case 'clear':
+      delete teamDrawing[userId];
+      break;
+  }
+
+  // Emitir actualización solo al profesor
+  io.to(`partida_${partidaId}`).emit('professorDrawingUpdate', {
+    partidaId,
+    equipoNumero,
+    drawing: teamDrawing
   });
 });
 
