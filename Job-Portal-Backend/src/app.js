@@ -1850,95 +1850,80 @@ socket.on('getTeamDrawingLive', ({ partidaId, equipoNumero }, callback) => {
 });
 
 socket.on('professorGetTeamDrawing', ({ partidaId, equipoNumero }, callback) => {
-  const key = `${partidaId}-${equipoNumero}`;
-  const dibujo = drawingGames?.[partidaId]?.[equipoNumero]?.canvasState || null;
+  try {
+    const gameId = `drawing-${partidaId}-${equipoNumero}`;
+    const game = drawingGames[gameId];
 
-  if (!dibujo) {
-    return callback({ success: false, error: 'Dibujo no encontrado' });
+    if (!game || !game.actions) {
+      return callback({ success: false, error: 'Dibujo no encontrado' });
+    }
+
+    // Reorganizar como { userId: [paths...] }
+    const drawingByUser = {};
+    for (const [userId, actions] of Object.entries(game.actions)) {
+      drawingByUser[userId] = actions;
+    }
+
+    return callback({
+      success: true,
+      drawing: drawingByUser
+    });
+  } catch (error) {
+    console.error('Error en professorGetTeamDrawing:', error);
+    callback({ success: false, error: error.message });
   }
-
-  return callback({ success: true, drawing: dibujo });
 });
 
+
 socket.on('drawingAction', ({ partidaId, equipoNumero, userId, action }) => {
-  console.log(`[Backend] drawingAction recibida: partida ${partidaId}, equipo ${equipoNumero}, usuario ${userId}, tipo ${action.type}`);
+  const gameId = `drawing-${partidaId}-${equipoNumero}`;
 
-  const numPartidaId = Number(partidaId);
-    if (isNaN(numPartidaId)) {
-      console.error('[Backend] ID de partida inválido:', partidaId);
-      return;
-    }
+  if (!drawingGames[gameId]) {
+    drawingGames[gameId] = {
+      actions: {},
+      tintaStates: {}
+    };
+  }
 
-    // Inicializar estructuras
-    if (!teamDrawings.has(numPartidaId)) {
-      console.log(`[Backend] Creando nueva partida: ${numPartidaId}`);
-      teamDrawings.set(numPartidaId, new Map());
-    }
-    
-    const partidaData = teamDrawings.get(numPartidaId);
-    
-    if (!partidaData.has(equipoNumero)) {
-      console.log(`[Backend] Creando nuevo equipo: ${equipoNumero} en partida ${numPartidaId}`);
-      partidaData.set(equipoNumero, new Map());
-    }
-    
-    const teamDrawing = partidaData.get(equipoNumero);
-    
-    if (!teamDrawing.has(userId)) {
-      console.log(`[Backend] Creando nuevo usuario: ${userId} en equipo ${equipoNumero}`);
-      teamDrawing.set(userId, []);
-    }
+  if (!drawingGames[gameId].actions[userId]) {
+    drawingGames[gameId].actions[userId] = [];
+  }
 
-    const userPaths = teamDrawing.get(userId);
-  
-  try {
-    // Inicializar estructuras si no existen
-    if (!teamDrawings[partidaId]) {
-      console.log(`[Backend] Creando estructura para nueva partida: ${partidaId}`);
-      teamDrawings[partidaId] = {};
-    }
-    
-    if (!teamDrawings[partidaId][equipoNumero]) {
-      console.log(`[Backend] Creando estructura para nuevo equipo: ${equipoNumero}`);
-      teamDrawings[partidaId][equipoNumero] = {};
-    }
-    
-    if (!teamDrawings[partidaId][equipoNumero][userId]) {
-      console.log(`[Backend] Creando estructura para nuevo usuario: ${userId}`);
-      teamDrawings[partidaId][equipoNumero][userId] = [];
-    }
-    
-    const userPaths = teamDrawings[partidaId][equipoNumero][userId];
-    
-    // Procesar la acción
-    switch (action.type) {
-      case 'pathStart':
-        console.log(`[Backend] Agregando nuevo path: ${action.path.id}`);
-        userPaths.push(action.path);
-        break;
-        
-      case 'pathUpdate':
-      case 'pathComplete':
-        const existingIndex = userPaths.findIndex(p => p.id === action.path.id);
-        if (existingIndex >= 0) {
-          console.log(`[Backend] Actualizando path existente: ${action.path.id}`);
-          userPaths[existingIndex] = action.path;
-        } else {
-          console.log(`[Backend] Agregando nuevo path (actualización): ${action.path.id}`);
-          userPaths.push(action.path);
-        }
-        break;
-        
-      case 'clear':
-        console.log(`[Backend] Limpiando paths para usuario: ${userId}`);
-        teamDrawings[partidaId][equipoNumero][userId] = [];
-        break;
-    }
-    
-    console.log(`[Backend] Total paths para usuario ${userId}: ${userPaths.length}`);
-  } catch (error) {
-    console.error('[Backend] Error en drawingAction:', error);
-  }
+  switch (action.type) {
+    case 'pathStart':
+      drawingGames[gameId].actions[userId].push(action.path);
+      break;
+
+    case 'pathUpdate':
+    case 'pathComplete':
+      const userActions = drawingGames[gameId].actions[userId];
+      const existingActionIndex = userActions.findIndex(a => a.id === action.path.id);
+
+      if (existingActionIndex >= 0) {
+        userActions[existingActionIndex] = action.path;
+      } else {
+        userActions.push(action.path);
+      }
+      break;
+
+    case 'clear':
+      delete drawingGames[gameId].actions[userId];
+      drawingGames[gameId].tintaStates[userId] = 5000;
+
+      // Notificar a todos que se borró
+      io.to(`team-${partidaId}-${equipoNumero}`).emit('drawingAction', {
+        type: 'clear',
+        userId,
+        tinta: 5000
+      });
+      return; // ⚠️ Evita doble emisión
+  }
+
+  // ✅ Esta es la forma correcta
+  io.to(`team-${partidaId}-${equipoNumero}`).emit('drawingAction', {
+    userId,
+    ...action
+  });
 });
 
 
