@@ -1869,103 +1869,105 @@ socket.on('professorGetTeamDrawing', ({ partidaId, equipoNumero }, callback) => 
 });
 
 socket.on('drawingAction', ({ partidaId, equipoNumero, userId, action }) => {
-  const gameId = `drawing-${partidaId}-${equipoNumero}`;
-
-  // ⚠️ Mantenemos exactamente el mismo código original
-  if (!drawingGames[gameId]) {
-    drawingGames[gameId] = {
-      actions: {},
-      tintaStates: {}
-    };
+  console.log(`[Backend] drawingAction recibida: partida ${partidaId}, equipo ${equipoNumero}, usuario ${userId}, tipo ${action.type}`);
+  
+  try {
+    // Inicializar estructuras si no existen
+    if (!teamDrawings[partidaId]) {
+      console.log(`[Backend] Creando estructura para nueva partida: ${partidaId}`);
+      teamDrawings[partidaId] = {};
+    }
+    
+    if (!teamDrawings[partidaId][equipoNumero]) {
+      console.log(`[Backend] Creando estructura para nuevo equipo: ${equipoNumero}`);
+      teamDrawings[partidaId][equipoNumero] = {};
+    }
+    
+    if (!teamDrawings[partidaId][equipoNumero][userId]) {
+      console.log(`[Backend] Creando estructura para nuevo usuario: ${userId}`);
+      teamDrawings[partidaId][equipoNumero][userId] = [];
+    }
+    
+    const userPaths = teamDrawings[partidaId][equipoNumero][userId];
+    
+    // Procesar la acción
+    switch (action.type) {
+      case 'pathStart':
+        console.log(`[Backend] Agregando nuevo path: ${action.path.id}`);
+        userPaths.push(action.path);
+        break;
+        
+      case 'pathUpdate':
+      case 'pathComplete':
+        const existingIndex = userPaths.findIndex(p => p.id === action.path.id);
+        if (existingIndex >= 0) {
+          console.log(`[Backend] Actualizando path existente: ${action.path.id}`);
+          userPaths[existingIndex] = action.path;
+        } else {
+          console.log(`[Backend] Agregando nuevo path (actualización): ${action.path.id}`);
+          userPaths.push(action.path);
+        }
+        break;
+        
+      case 'clear':
+        console.log(`[Backend] Limpiando paths para usuario: ${userId}`);
+        teamDrawings[partidaId][equipoNumero][userId] = [];
+        break;
+    }
+    
+    console.log(`[Backend] Total paths para usuario ${userId}: ${userPaths.length}`);
+  } catch (error) {
+    console.error('[Backend] Error en drawingAction:', error);
   }
+});
 
-  if (!drawingGames[gameId].actions[userId]) {
-    drawingGames[gameId].actions[userId] = [];
-  }
-
-  switch (action.type) {
-    case 'pathStart':
-      drawingGames[gameId].actions[userId].push(action.path);
-      break;
-
-    case 'pathUpdate':
-    case 'pathComplete':
-      const userActions = drawingGames[gameId].actions[userId];
-      const existingActionIndex = userActions.findIndex(a => a.id === action.path.id);
-
-      if (existingActionIndex >= 0) {
-        userActions[existingActionIndex] = action.path;
-      } else {
-        userActions.push(action.path);
-      }
-      break;
-
-    case 'clear':
-      delete drawingGames[gameId].actions[userId];
-      drawingGames[gameId].tintaStates[userId] = 5000;
-
-      io.to(`team-${partidaId}-${equipoNumero}`).emit('drawingAction', {
-        type: 'clear',
-        userId,
-        tinta: 5000
+// Evento para obtener dibujos del equipo
+socket.on('professorGetTeamDrawing', ({ partidaId, equipoNumero }, callback) => {
+  console.log(`[Backend] Solicitud de dibujo: partida ${partidaId}, equipo ${equipoNumero}`);
+  
+  try {
+    // Verificar si tenemos datos para esta partida y equipo
+    if (!teamDrawings[partidaId] || !teamDrawings[partidaId][equipoNumero]) {
+      console.log(`[Backend] No se encontraron dibujos para equipo ${equipoNumero}`);
+      callback({ 
+        success: true, 
+        drawing: {},
+        message: `No se encontraron dibujos para el equipo ${equipoNumero}`
       });
       return;
-  }
-
-  io.to(`team-${partidaId}-${equipoNumero}`).emit('drawingAction', {
-    userId,
-    ...action
-  });
-
-  // 🔄 Nueva parte: Sincronización paralela para el profesor
-  if (!professorDrawings.has(partidaId)) {
-    professorDrawings.set(partidaId, {});
-  }
-
-  const partidaData = professorDrawings.get(partidaId);
-  
-  if (!partidaData[equipoNumero]) {
-    partidaData[equipoNumero] = {};
-  }
-
-  const teamDrawing = partidaData[equipoNumero];
-
-  // Sincronizamos los cambios con la estructura del profesor
-  switch (action.type) {
-    case 'pathStart':
-      if (!teamDrawing[userId]) teamDrawing[userId] = [];
-      teamDrawing[userId].push(action.path);
-      break;
-
-    case 'pathUpdate':
-    case 'pathComplete':
-      if (!teamDrawing[userId]) teamDrawing[userId] = [];
-      const existingIndex = teamDrawing[userId].findIndex(p => p.id === action.path.id);
-      if (existingIndex >= 0) {
-        teamDrawing[userId][existingIndex] = action.path;
-      } else {
-        teamDrawing[userId].push(action.path);
-      }
-      break;
-
-    case 'clear':
-      delete teamDrawing[userId];
-      break;
-  }
-
-    socket.emit('registerTeamDrawing', {
-      partidaId,
-      equipoNumero,
-      userId,
-      action
+    }
+    
+    const drawing = teamDrawings[partidaId][equipoNumero];
+    const userCount = Object.keys(drawing).length;
+    let totalPaths = 0;
+    
+    Object.values(drawing).forEach(paths => {
+      totalPaths += paths.length;
     });
+    
+    console.log(`[Backend] Enviando dibujo: ${userCount} usuarios, ${totalPaths} paths`);
+    
+    callback({ 
+      success: true, 
+      drawing,
+      userCount,
+      totalPaths
+    });
+  } catch (error) {
+    console.error('[Backend] Error en professorGetTeamDrawing:', error);
+    callback({ 
+      success: false, 
+      error: error.message 
+    });
+  }
+});
 
-  // Emitir actualización solo al profesor
-  io.to(`partida_${partidaId}`).emit('professorDrawingUpdate', {
-    partidaId,
-    equipoNumero,
-    drawing: teamDrawing
-  });
+// Limpiar datos cuando finaliza la partida
+socket.on('cleanDrawingData', (partidaId) => {
+  console.log(`[Backend] Limpiando datos de dibujo para partida ${partidaId}`);
+  if (teamDrawings[partidaId]) {
+    delete teamDrawings[partidaId];
+  }
 });
 
 socket.on('registerTeamDrawing', ({ partidaId, equipoNumero, userId, action }) => {
