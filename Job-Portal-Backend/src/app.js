@@ -1829,92 +1829,70 @@ socket.on('clearMyDrawing', ({ partidaId, equipoNumero, userId }) => {
 socket.on('drawingAction', ({ partidaId, equipoNumero, userId, action }) => {
   const gameId = `drawing-${partidaId}-${equipoNumero}`;
 
-  // 1. Manejar el juego de dibujo local
+  // Inicializar estructuras si no existen
   if (!drawingGames[gameId]) {
-    drawingGames[gameId] = {
-      actions: {},
-      tintaStates: {}
-    };
+    drawingGames[gameId] = { actions: {}, tintaStates: {} };
   }
 
-  if (!drawingGames[gameId].actions[userId]) {
-    drawingGames[gameId].actions[userId] = [];
-  }
-
-  // 2. Manejar el almacenamiento centralizado de dibujos
   if (!teamDrawings.has(partidaId)) {
     teamDrawings.set(partidaId, new Map());
   }
+  const partidaDrawings = teamDrawings.get(partidaId);
   
-  const partidaData = teamDrawings.get(partidaId);
-  
-  if (!partidaData.has(equipoNumero)) {
-    partidaData.set(equipoNumero, {});
+  if (!partidaDrawings.has(equipoNumero)) {
+    partidaDrawings.set(equipoNumero, {});
   }
-  
-  const teamData = partidaData.get(equipoNumero);
+  const teamDrawing = partidaDrawings.get(equipoNumero);
 
-  // 3. Procesar la acción
+  // Procesar la acción
   switch (action.type) {
     case 'pathStart':
-      drawingGames[gameId].actions[userId].push(action.path);
-      if (!teamData[userId]) teamData[userId] = [];
-      teamData[userId].push(action.path);
-      break;
-
     case 'pathUpdate':
     case 'pathComplete':
-      // Actualizar en drawingGames
-      const userActions = drawingGames[gameId].actions[userId];
-      const existingActionIndex = userActions.findIndex(a => a.id === action.path.id);
-
-      if (existingActionIndex >= 0) {
-        userActions[existingActionIndex] = action.path;
-      } else {
-        userActions.push(action.path);
+      if (!drawingGames[gameId].actions[userId]) {
+        drawingGames[gameId].actions[userId] = [];
+      }
+      if (!teamDrawing[userId]) {
+        teamDrawing[userId] = [];
       }
       
-      // Actualizar en teamDrawings
-      if (!teamData[userId]) teamData[userId] = [];
-      const existingIndex = teamData[userId].findIndex(a => a.id === action.path.id);
+      // Actualizar o agregar el path
+      const existingIndex = drawingGames[gameId].actions[userId].findIndex(p => p.id === action.path.id);
       if (existingIndex >= 0) {
-        teamData[userId][existingIndex] = action.path;
+        drawingGames[gameId].actions[userId][existingIndex] = action.path;
       } else {
-        teamData[userId].push(action.path);
+        drawingGames[gameId].actions[userId].push(action.path);
+      }
+
+      // Sincronizar con teamDrawing
+      const teamExistingIndex = teamDrawing[userId].findIndex(p => p.id === action.path.id);
+      if (teamExistingIndex >= 0) {
+        teamDrawing[userId][teamExistingIndex] = action.path;
+      } else {
+        teamDrawing[userId].push(action.path);
       }
       break;
 
     case 'clear':
-      // Limpiar en ambos almacenamientos
       delete drawingGames[gameId].actions[userId];
+      delete teamDrawing[userId];
       drawingGames[gameId].tintaStates[userId] = 5000;
-      delete teamData[userId];
-      
-      // Notificar a todos que se borró
-      io.to(`team-${partidaId}-${equipoNumero}`).emit('drawingAction', {
-        type: 'clear',
-        userId,
-        tinta: 5000
-      });
       break;
   }
 
-  // 4. Transmitir actualizaciones
-  if (action.type !== 'clear') {
-    // A la sala del equipo
-    io.to(`team-${partidaId}-${equipoNumero}`).emit('drawingAction', {
-      userId,
-      ...action
-    });
-    
-    // A la sala del profesor
-    io.to(`partida_${partidaId}`).emit('drawingUpdate', {
-      partidaId,
-      equipoNumero,
-      userId,
-      action
-    });
-  }
+  // Emitir a los miembros del equipo
+  io.to(`team-${partidaId}-${equipoNumero}`).emit('drawingAction', {
+    userId,
+    ...action
+  });
+
+  // Emitir al profesor
+  io.to(`partida_${partidaId}`).emit('drawingUpdate', {
+    partidaId,
+    equipoNumero,
+    userId,
+    action
+  });
 });
 
 socket.on('requestDrawingSync', ({ partidaId, equipoNumero }) => {
@@ -1932,6 +1910,24 @@ socket.on('requestDrawingSync', ({ partidaId, equipoNumero }) => {
   }
 });
 
+socket.on('getTeamDrawingsForProfessor', ({ partidaId, equipoNumero }, callback) => {
+  try {
+    if (!teamDrawings.has(partidaId)) {
+      return callback({ success: false, error: 'Partida no encontrada' });
+    }
+    
+    const partidaData = teamDrawings.get(partidaId);
+    if (!partidaData.has(equipoNumero)) {
+      return callback({ success: false, error: 'Equipo no encontrado' });
+    }
+    
+    const drawings = partidaData.get(equipoNumero);
+    callback({ success: true, linesByUser: drawings });
+  } catch (error) {
+    console.error('Error al obtener dibujos:', error);
+    callback({ success: false, error: error.message });
+  }
+});
 
 // Limpiar dibujos de un usuario
 socket.on('clearMyDrawing', ({ partidaId, equipoNumero, userId }) => {
