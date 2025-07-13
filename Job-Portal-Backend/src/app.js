@@ -1951,42 +1951,27 @@ socket.on('drawingAction', ({ partidaId, equipoNumero, userId, action }) => {
 
 // Evento para obtener dibujos del equipo
 socket.on('professorGetTeamDrawing', ({ partidaId, equipoNumero }, callback) => {
-  console.log(`[Backend] Solicitud de dibujo: partida ${partidaId}, equipo ${equipoNumero}`);
-  
   try {
-    // Verificar si tenemos datos para esta partida y equipo
-    if (!teamDrawings[partidaId] || !teamDrawings[partidaId][equipoNumero]) {
-      console.log(`[Backend] No se encontraron dibujos para equipo ${equipoNumero}`);
-      callback({ 
-        success: true, 
-        drawing: {},
-        message: `No se encontraron dibujos para el equipo ${equipoNumero}`
-      });
-      return;
+    // Convertir partidaId a número
+    const numPartidaId = Number(partidaId);
+    if (isNaN(numPartidaId)) {
+      return callback({ error: 'ID de partida inválido' });
+    }
+
+    if (!teamDrawings.has(numPartidaId)) {
+      return callback({ success: false, error: 'Partida no encontrada' });
     }
     
-    const drawing = teamDrawings[partidaId][equipoNumero];
-    const userCount = Object.keys(drawing).length;
-    let totalPaths = 0;
+    const partidaData = teamDrawings.get(numPartidaId);
+    if (!partidaData.has(equipoNumero)) {
+      return callback({ success: true, drawing: {} });
+    }
     
-    Object.values(drawing).forEach(paths => {
-      totalPaths += paths.length;
-    });
-    
-    console.log(`[Backend] Enviando dibujo: ${userCount} usuarios, ${totalPaths} paths`);
-    
-    callback({ 
-      success: true, 
-      drawing,
-      userCount,
-      totalPaths
-    });
+    const drawing = partidaData.get(equipoNumero);
+    callback({ success: true, drawing });
   } catch (error) {
-    console.error('[Backend] Error en professorGetTeamDrawing:', error);
-    callback({ 
-      success: false, 
-      error: error.message 
-    });
+    console.error('Error en professorGetTeamDrawing:', error);
+    callback({ success: false, error: error.message });
   }
 });
 
