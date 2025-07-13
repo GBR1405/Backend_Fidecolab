@@ -1849,72 +1849,56 @@ socket.on('getTeamDrawingLive', ({ partidaId, equipoNumero }, callback) => {
 });
 
 socket.on('drawingAction', ({ partidaId, equipoNumero, userId, action }) => {
-  try {
-    // Inicializar estructuras si no existen
-    if (!liveDrawings.has(partidaId)) {
-      liveDrawings.set(partidaId, {});
-    }
-    
-    const partidaData = liveDrawings.get(partidaId);
-    
-    if (!partidaData[equipoNumero]) {
-      partidaData[equipoNumero] = {};
-    }
-    
-    const teamDrawing = partidaData[equipoNumero];
+  const gameId = `drawing-${partidaId}-${equipoNumero}`;
 
-    // Procesar la acción
-    switch (action.type) {
-      case 'pathStart':
-        if (!teamDrawing[userId]) teamDrawing[userId] = [];
-        teamDrawing[userId].push({
-          id: action.path.id,
-          points: [action.path.points[0]],
-          color: action.path.color,
-          strokeWidth: action.path.strokeWidth
-        });
-        break;
-        
-      case 'pathUpdate':
-        if (teamDrawing[userId]) {
-          const path = teamDrawing[userId].find(p => p.id === action.path.id);
-          if (path) {
-            path.points = [...path.points, ...action.path.points];
-          }
-        }
-        break;
-        
-      case 'pathComplete':
-        if (teamDrawing[userId]) {
-          const path = teamDrawing[userId].find(p => p.id === action.path.id);
-          if (path) {
-            path.points = action.path.points;
-          }
-        }
-        break;
-        
-      case 'clear':
-        delete teamDrawing[userId];
-        break;
-    }
-
-    // Emitir a los miembros del equipo
-    io.to(`team-${partidaId}-${equipoNumero}`).emit('drawingAction', {
-      userId,
-      ...action
-    });
-
-    // Emitir actualización en vivo al profesor
-    io.to(`partida_${partidaId}`).emit('teamDrawingLiveUpdate', {
-      partidaId,
-      equipoNumero,
-      drawing: teamDrawing
-    });
-
-  } catch (error) {
-    console.error('Error en drawingAction:', error);
+  if (!drawingGames[gameId]) {
+    drawingGames[gameId] = {
+      actions: {},
+      tintaStates: {}
+    };
   }
+
+  if (!drawingGames[gameId].actions[userId]) {
+    drawingGames[gameId].actions[userId] = [];
+  }
+
+  switch (action.type) {
+    case 'pathStart':
+      drawingGames[gameId].actions[userId].push(action.path);
+      break;
+
+    case 'pathUpdate':
+    case 'pathComplete':
+      const userActions = drawingGames[gameId].actions[userId];
+      const existingActionIndex = userActions.findIndex(a => a.id === action.path.id);
+
+      if (existingActionIndex >= 0) {
+        userActions[existingActionIndex] = action.path;
+      } else {
+        userActions.push(action.path);
+      }
+      break;
+
+    case 'clear':
+      delete drawingGames[gameId].actions[userId];
+      drawingGames[gameId].tintaStates[userId] = 5000;
+
+      // Notificar a todos que se borró
+      io.to(`team-${partidaId}-${equipoNumero}`).emit('drawingAction', {
+        type: 'clear',
+        userId,
+        tinta: 5000
+      });
+      return; // ⚠️ Evita doble emisión
+  }
+
+  // ✅ Esta es la forma correcta
+  io.to(`team-${partidaId}-${equipoNumero}`).emit('drawingAction', {
+    userId,
+    ...action
+  });
 });
+
 
 socket.on('requestDrawingSync', ({ partidaId, equipoNumero }) => {
   const gameId = `drawing-${partidaId}-${equipoNumero}`;
