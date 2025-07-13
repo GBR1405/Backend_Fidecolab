@@ -138,6 +138,7 @@ const drawingStates = {};
 const tintaStates = {};
 
 const gameTeamTimestamps = {};
+const liveDrawings = new Map();
 
 const VOTING_TIME = 5000;
 
@@ -1826,73 +1827,93 @@ socket.on('clearMyDrawing', ({ partidaId, equipoNumero, userId }) => {
 // Manejar acciones de dibujo
 // En tu app.js, modifica el manejo de drawingAction:
 
+socket.on('getTeamDrawingLive', ({ partidaId, equipoNumero }, callback) => {
+  try {
+    if (!liveDrawings.has(partidaId)) {
+      return callback({ success: false, error: 'Partida no encontrada' });
+    }
+    
+    const partidaData = liveDrawings.get(partidaId);
+    const teamDrawing = partidaData[equipoNumero] || {};
+    
+    callback({ 
+      success: true, 
+      drawing: teamDrawing,
+      equipoNumero,
+      partidaId
+    });
+  } catch (error) {
+    console.error('Error en getTeamDrawingLive:', error);
+    callback({ success: false, error: error.message });
+  }
+});
+
 socket.on('drawingAction', ({ partidaId, equipoNumero, userId, action }) => {
-  const gameId = `drawing-${partidaId}-${equipoNumero}`;
+  try {
+    // Inicializar estructuras si no existen
+    if (!liveDrawings.has(partidaId)) {
+      liveDrawings.set(partidaId, {});
+    }
+    
+    const partidaData = liveDrawings.get(partidaId);
+    
+    if (!partidaData[equipoNumero]) {
+      partidaData[equipoNumero] = {};
+    }
+    
+    const teamDrawing = partidaData[equipoNumero];
 
-  // Inicializar estructuras si no existen
-  if (!drawingGames[gameId]) {
-    drawingGames[gameId] = { actions: {}, tintaStates: {} };
+    // Procesar la acción
+    switch (action.type) {
+      case 'pathStart':
+        if (!teamDrawing[userId]) teamDrawing[userId] = [];
+        teamDrawing[userId].push({
+          id: action.path.id,
+          points: [action.path.points[0]],
+          color: action.path.color,
+          strokeWidth: action.path.strokeWidth
+        });
+        break;
+        
+      case 'pathUpdate':
+        if (teamDrawing[userId]) {
+          const path = teamDrawing[userId].find(p => p.id === action.path.id);
+          if (path) {
+            path.points = [...path.points, ...action.path.points];
+          }
+        }
+        break;
+        
+      case 'pathComplete':
+        if (teamDrawing[userId]) {
+          const path = teamDrawing[userId].find(p => p.id === action.path.id);
+          if (path) {
+            path.points = action.path.points;
+          }
+        }
+        break;
+        
+      case 'clear':
+        delete teamDrawing[userId];
+        break;
+    }
+
+    // Emitir a los miembros del equipo
+    io.to(`team-${partidaId}-${equipoNumero}`).emit('drawingAction', {
+      userId,
+      ...action
+    });
+
+    // Emitir actualización en vivo al profesor
+    io.to(`partida_${partidaId}`).emit('teamDrawingLiveUpdate', {
+      partidaId,
+      equipoNumero,
+      drawing: teamDrawing
+    });
+
+  } catch (error) {
+    console.error('Error en drawingAction:', error);
   }
-
-  if (!teamDrawings.has(partidaId)) {
-    teamDrawings.set(partidaId, new Map());
-  }
-  const partidaDrawings = teamDrawings.get(partidaId);
-  
-  if (!partidaDrawings.has(equipoNumero)) {
-    partidaDrawings.set(equipoNumero, {});
-  }
-  const teamDrawing = partidaDrawings.get(equipoNumero);
-
-  // Procesar la acción
-  switch (action.type) {
-    case 'pathStart':
-    case 'pathUpdate':
-    case 'pathComplete':
-      if (!drawingGames[gameId].actions[userId]) {
-        drawingGames[gameId].actions[userId] = [];
-      }
-      if (!teamDrawing[userId]) {
-        teamDrawing[userId] = [];
-      }
-      
-      // Actualizar o agregar el path
-      const existingIndex = drawingGames[gameId].actions[userId].findIndex(p => p.id === action.path.id);
-      if (existingIndex >= 0) {
-        drawingGames[gameId].actions[userId][existingIndex] = action.path;
-      } else {
-        drawingGames[gameId].actions[userId].push(action.path);
-      }
-
-      // Sincronizar con teamDrawing
-      const teamExistingIndex = teamDrawing[userId].findIndex(p => p.id === action.path.id);
-      if (teamExistingIndex >= 0) {
-        teamDrawing[userId][teamExistingIndex] = action.path;
-      } else {
-        teamDrawing[userId].push(action.path);
-      }
-      break;
-
-    case 'clear':
-      delete drawingGames[gameId].actions[userId];
-      delete teamDrawing[userId];
-      drawingGames[gameId].tintaStates[userId] = 5000;
-      break;
-  }
-
-  // Emitir a los miembros del equipo
-  io.to(`team-${partidaId}-${equipoNumero}`).emit('drawingAction', {
-    userId,
-    ...action
-  });
-
-  // Emitir al profesor
-  io.to(`partida_${partidaId}`).emit('drawingUpdate', {
-    partidaId,
-    equipoNumero,
-    userId,
-    action
-  });
 });
 
 socket.on('requestDrawingSync', ({ partidaId, equipoNumero }) => {
@@ -1922,7 +1943,11 @@ socket.on('getTeamDrawingsForProfessor', ({ partidaId, equipoNumero }, callback)
     }
     
     const drawings = partidaData.get(equipoNumero);
-    callback({ success: true, linesByUser: drawings });
+    callback({ 
+      success: true, 
+      linesByUser: drawings,
+      lastUpdated: new Date().toISOString()
+    });
   } catch (error) {
     console.error('Error al obtener dibujos:', error);
     callback({ success: false, error: error.message });
