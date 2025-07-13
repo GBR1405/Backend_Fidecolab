@@ -1870,6 +1870,34 @@ socket.on('professorGetTeamDrawing', ({ partidaId, equipoNumero }, callback) => 
 
 socket.on('drawingAction', ({ partidaId, equipoNumero, userId, action }) => {
   console.log(`[Backend] drawingAction recibida: partida ${partidaId}, equipo ${equipoNumero}, usuario ${userId}, tipo ${action.type}`);
+
+  const numPartidaId = Number(partidaId);
+    if (isNaN(numPartidaId)) {
+      console.error('[Backend] ID de partida inválido:', partidaId);
+      return;
+    }
+
+    // Inicializar estructuras
+    if (!teamDrawings.has(numPartidaId)) {
+      console.log(`[Backend] Creando nueva partida: ${numPartidaId}`);
+      teamDrawings.set(numPartidaId, new Map());
+    }
+    
+    const partidaData = teamDrawings.get(numPartidaId);
+    
+    if (!partidaData.has(equipoNumero)) {
+      console.log(`[Backend] Creando nuevo equipo: ${equipoNumero} en partida ${numPartidaId}`);
+      partidaData.set(equipoNumero, new Map());
+    }
+    
+    const teamDrawing = partidaData.get(equipoNumero);
+    
+    if (!teamDrawing.has(userId)) {
+      console.log(`[Backend] Creando nuevo usuario: ${userId} en equipo ${equipoNumero}`);
+      teamDrawing.set(userId, []);
+    }
+
+    const userPaths = teamDrawing.get(userId);
   
   try {
     // Inicializar estructuras si no existen
