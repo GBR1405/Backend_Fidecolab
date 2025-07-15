@@ -669,7 +669,7 @@ io.on('connection', (socket) => {
 
     console.log(`[BD] Resultados insertados para ${resultadosPorEquipo.length} equipos`);
 
-    await evaluarLogrosGrupales(partidaId);
+    await evaluarLogrosGrupales(partidaId, resultadosPorEquipo);
     await evaluarLogrosPersonales(partidaId);
 
     // 5. Limpiar memoria
@@ -1874,6 +1874,51 @@ socket.on('professorGetTeamDrawing', ({ partidaId, equipoNumero }, callback) => 
   }
 });
 
+socket.on('getDemoDrawing', ({ partidaId, equipoNumero }, callback) => {
+  try {
+    const gameId = `drawing-${partidaId}-${equipoNumero}`;
+    const game = drawingGames[gameId];
+
+    if (!game || !game.actions) {
+      return callback({ success: false, error: 'Dibujo no encontrado' });
+    }
+
+    const drawingByUser = {};
+    for (const [userId, actions] of Object.entries(game.actions)) {
+      drawingByUser[userId] = actions;
+    }
+
+    return callback({
+      success: true,
+      drawing: drawingByUser
+    });
+  } catch (error) {
+    console.error('Error en getDemoDrawing:', error);
+    callback({ success: false, error: error.message });
+  }
+});
+
+socket.on('activarDemostracion', (partidaId) => {
+    demostracionesActivas[partidaId] = true;
+    io.to(`partida-${partidaId}`).emit('estadoDemostracion', true);
+  });
+
+  socket.on('desactivarDemostracion', (partidaId) => {
+    delete demostracionesActivas[partidaId];
+    io.to(`partida-${partidaId}`).emit('estadoDemostracion', false);
+  });
+
+  socket.on('getEstadoDemostracion', (partidaId, callback) => {
+    callback(!!demostracionesActivas[partidaId]);
+  });
+
+  socket.on('setEstadoDemostracion', ({ partidaId, estado, userId }) => {
+  if (!userId.startsWith('prof-')) return; // solo profesor puede cambiar
+
+  estadoDemostracionMap[partidaId] = estado;
+  io.to(`partida-${partidaId}`).emit('estadoDemostracion', estado);
+});
+
 
 socket.on('drawingAction', ({ partidaId, equipoNumero, userId, action }) => {
   const gameId = `drawing-${partidaId}-${equipoNumero}`;
@@ -2869,7 +2914,7 @@ async function evaluarLogrosPersonales(partidaId) {
   }
 }
 
-async function evaluarLogrosGrupales(partidaId) {
+async function evaluarLogrosGrupales(partidaId, resultadosPorEquipo) {
   try {
     const pool = await poolPromise;
 
