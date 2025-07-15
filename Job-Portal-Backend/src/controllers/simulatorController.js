@@ -188,3 +188,174 @@ export const checkActivity = async (req, res) => {
   }
 };
 
+export const getResults = async (req, res) => {
+    const { partidaId } = req.params;
+    const userId = req.user.id;
+    const { rol } = req.user;
+
+    try {
+        const pool = await poolPromise;
+
+        // 1. Verificar si la partida existe
+        const partidaQuery = await pool.request()
+            .input('partidaId', sql.Int, partidaId)
+            .query('SELECT * FROM Partida_TB WHERE Partida_ID_PK = @partidaId');
+
+        if (partidaQuery.recordset.length === 0) {
+            return res.status(404).json({ message: 'Partida no encontrada' });
+        }
+
+        const partida = partidaQuery.recordset[0];
+
+        // 2. Verificar permisos del usuario
+        if (rol === 'Profesor') {
+            // Si es profesor, verificar que sea el creador de la partida
+            if (partida.Profesor_ID_FK !== userId) {
+                return res.status(403).json({ message: 'No tienes permiso para ver estos resultados' });
+            }
+        } else {
+            // Si es estudiante, verificar que participó en la partida
+            const participanteQuery = await pool.request()
+                .input('userId', sql.Int, userId)
+                .input('partidaId', sql.Int, partidaId)
+                .query('SELECT * FROM Participantes_TB WHERE Usuario_ID_FK = @userId AND Partida_ID_FK = @partidaId');
+
+            if (participanteQuery.recordset.length === 0) {
+                return res.status(403).json({ message: 'No participaste en esta partida' });
+            }
+        }
+
+        // 3. Obtener datos según el rol
+        if (rol === 'Profesor') {
+            // Obtener todos los equipos de la partida
+            const equiposQuery = await pool.request()
+                .input('partidaId', sql.Int, partidaId)
+                .query(`
+                    SELECT DISTINCT Equipo_Numero 
+                    FROM Participantes_TB 
+                    WHERE Partida_ID_FK = @partidaId
+                    ORDER BY Equipo_Numero
+                `);
+
+            const equipos = equiposQuery.recordset.map(e => e.Equipo_Numero);
+
+            // Obtener miembros de cada equipo
+            const miembrosPromises = equipos.map(async equipo => {
+                const miembrosQuery = await pool.request()
+                    .input('partidaId', sql.Int, partidaId)
+                    .input('equipo', sql.Int, equipo)
+                    .query(`
+                        SELECT u.Usuario_ID_PK, u.Nombre, u.Apellido1, u.Apellido2
+                        FROM Participantes_TB p
+                        JOIN Usuario_TB u ON p.Usuario_ID_FK = u.Usuario_ID_PK
+                        WHERE p.Partida_ID_FK = @partidaId AND p.Equipo_Numero = @equipo
+                    `);
+                return {
+                    equipo,
+                    miembros: miembrosQuery.recordset
+                };
+            });
+
+            const miembrosPorEquipo = await Promise.all(miembrosPromises);
+
+            // Obtener resultados por equipo
+            const resultadosPromises = equipos.map(async equipo => {
+                const resultadosQuery = await pool.request()
+                    .input('partidaId', sql.Int, partidaId)
+                    .query(`
+                        SELECT r.*, u.Nombre, u.Apellido1, u.Apellido2
+                        FROM Resultados_TB r
+                        JOIN Usuario_TB u ON r.Usuario_ID_FK = u.Usuario_ID_PK
+                        JOIN Participantes_TB p ON r.Usuario_ID_FK = p.Usuario_ID_FK AND r.Partida_ID_FK = p.Partida_ID_FK
+                        WHERE r.Partida_ID_FK = @partidaId AND p.Equipo_Numero = @equipo
+                    `);
+                return {
+                    equipo,
+                    resultados: resultadosQuery.recordset
+                };
+            });
+
+            const resultadosPorEquipo = await Promise.all(resultadosPromises);
+
+            // Obtener logros de la partida (a nivel de equipo)
+            const logrosQuery = await pool.request()
+                .input('partidaId', sql.Int, partidaId)
+                .query(`
+                    SELECT l.*, pl.Equipo_Numero
+                    FROM Partida_Logros_TB pl
+                    JOIN Logros_TB l ON pl.Logro_ID_FK = l.Logro_ID_PK
+                    WHERE pl.Partida_ID_FK = @partidaId AND l.Tipo = 'grupo'
+                `);
+
+            const logrosPorEquipo = logrosQuery.recordset.reduce((acc, logro) => {
+                if (!acc[logro.Equipo_Numero]) acc[logro.Equipo_Numero] = [];
+                acc[logro.Equipo_Numero].push(logro);
+                return acc;
+            }, {});
+
+            res.status(200).json({
+                partida,
+                equipos: miembrosPorEquipo,
+                resultados: resultadosPorEquipo,
+                logros: logrosPorEquipo
+            });
+
+        } else {
+            // Si es estudiante, obtener solo su equipo
+            const equipoQuery = await pool.request()
+                .input('userId', sql.Int, userId)
+                .input('partidaId', sql.Int, partidaId)
+                .query('SELECT Equipo_Numero FROM Participantes_TB WHERE Usuario_ID_FK = @userId AND Partida_ID_FK = @partidaId');
+
+            const equipoNumero = equipoQuery.recordset[0].Equipo_Numero;
+
+            // Obtener miembros del equipo
+            const miembrosQuery = await pool.request()
+                .input('partidaId', sql.Int, partidaId)
+                .input('equipo', sql.Int, equipoNumero)
+                .query(`
+                    SELECT u.Usuario_ID_PK, u.Nombre, u.Apellido1, u.Apellido2
+                    FROM Participantes_TB p
+                    JOIN Usuario_TB u ON p.Usuario_ID_FK = u.Usuario_ID_PK
+                    WHERE p.Partida_ID_FK = @partidaId AND p.Equipo_Numero = @equipo
+                `);
+
+            // Obtener resultados del equipo
+            const resultadosQuery = await pool.request()
+                .input('partidaId', sql.Int, partidaId)
+                .input('equipo', sql.Int, equipoNumero)
+                .query(`
+                    SELECT r.*, u.Nombre, u.Apellido1, u.Apellido2
+                    FROM Resultados_TB r
+                    JOIN Usuario_TB u ON r.Usuario_ID_FK = u.Usuario_ID_PK
+                    JOIN Participantes_TB p ON r.Usuario_ID_FK = p.Usuario_ID_FK AND r.Partida_ID_FK = p.Partida_ID_FK
+                    WHERE r.Partida_ID_FK = @partidaId AND p.Equipo_Numero = @equipo
+                `);
+
+            // Obtener logros del equipo
+            const logrosQuery = await pool.request()
+                .input('partidaId', sql.Int, partidaId)
+                .input('equipo', sql.Int, equipoNumero)
+                .query(`
+                    SELECT l.*
+                    FROM Partida_Logros_TB pl
+                    JOIN Logros_TB l ON pl.Logro_ID_FK = l.Logro_ID_PK
+                    WHERE pl.Partida_ID_FK = @partidaId AND pl.Equipo_Numero = @equipo AND l.Tipo = 'grupo'
+                `);
+
+            res.status(200).json({
+                partida,
+                equipo: {
+                    numero: equipoNumero,
+                    miembros: miembrosQuery.recordset,
+                    resultados: resultadosQuery.recordset,
+                    logros: logrosQuery.recordset
+                }
+            });
+        }
+
+    } catch (error) {
+        console.error('Error al obtener resultados:', error);
+        res.status(500).json({ message: 'Error al obtener resultados' });
+    }
+};
