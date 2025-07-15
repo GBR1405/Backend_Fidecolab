@@ -213,7 +213,6 @@ export const getResults = async (req, res) => {
                 return res.status(403).json({ message: 'No tienes permiso para ver estos resultados' });
             }
         } else {
-            // Si es estudiante, verificar que participó en la partida
             const participanteQuery = await pool.request()
                 .input('userId', sql.Int, userId)
                 .input('partidaId', sql.Int, partidaId)
@@ -229,7 +228,7 @@ export const getResults = async (req, res) => {
         }
 
         if (rol === 'Profesor') {
-            // Obtener equipos de la partida
+            // Obtener todos los equipos de la partida
             const equiposQuery = await pool.request()
                 .input('partidaId', sql.Int, partidaId)
                 .query(`
@@ -242,7 +241,7 @@ export const getResults = async (req, res) => {
             const equipos = equiposQuery.recordset.map(e => e.Equipo);
 
             // Obtener miembros de cada equipo
-            const miembrosPromises = equipos.map(async equipo => {
+            const miembrosPorEquipo = await Promise.all(equipos.map(async equipo => {
                 const miembrosQuery = await pool.request()
                     .input('partidaId', sql.Int, partidaId)
                     .input('equipo', sql.Int, equipo)
@@ -256,12 +255,10 @@ export const getResults = async (req, res) => {
                     equipo,
                     miembros: miembrosQuery.recordset
                 };
-            });
-
-            const miembrosPorEquipo = await Promise.all(miembrosPromises);
+            }));
 
             // Obtener resultados por equipo
-            const resultadosPromises = equipos.map(async equipo => {
+            const resultadosPorEquipo = await Promise.all(equipos.map(async equipo => {
                 const resultadosQuery = await pool.request()
                     .input('partidaId', sql.Int, partidaId)
                     .input('equipo', sql.Int, equipo)
@@ -274,27 +271,43 @@ export const getResults = async (req, res) => {
                     equipo,
                     resultados: resultadosQuery.recordset
                 };
-            });
+            }));
 
-            const resultadosPorEquipo = await Promise.all(resultadosPromises);
+            // Obtener logros grupales por equipo (usando un usuario de muestra por equipo)
+            const logrosPorEquipo = {};
 
-            // Obtener logros de la partida a nivel de grupo
-            const logrosQuery = await pool.request()
-                .input('partidaId', sql.Int, partidaId)
-                .query(`
-                    SELECT l.*, pl.Equipo
-                    FROM Partida_Logros_TB pl
-                    JOIN Logros_TB l ON pl.Logro_ID_FK = l.Logro_ID_PK
-                    WHERE pl.Partida_ID_FK = @partidaId AND l.Tipo = 'grupo'
-                `);
+            for (const equipo of equipos) {
+                const userQuery = await pool.request()
+                    .input('partidaId', sql.Int, partidaId)
+                    .input('equipo', sql.Int, equipo)
+                    .query(`
+                        SELECT TOP 1 Usuario_ID_FK
+                        FROM Participantes_TB
+                        WHERE Partida_ID_FK = @partidaId AND Equipo_Numero = @equipo
+                    `);
 
-            const logrosPorEquipo = logrosQuery.recordset.reduce((acc, logro) => {
-                if (!acc[logro.Equipo]) acc[logro.Equipo] = [];
-                acc[logro.Equipo].push(logro);
-                return acc;
-            }, {});
+                const usuarioEjemplo = userQuery.recordset[0]?.Usuario_ID_FK;
 
-            res.status(200).json({
+                if (usuarioEjemplo) {
+                    const logrosQuery = await pool.request()
+                        .input('userId', sql.Int, usuarioEjemplo)
+                        .input('partidaId', sql.Int, partidaId)
+                        .query(`
+                            SELECT l.*
+                            FROM Usuario_Logros_TB ul
+                            JOIN Logros_TB l ON ul.Logro_ID_FK = l.Logro_ID_PK
+                            WHERE ul.Usuario_ID_FK = @userId
+                              AND ul.Partida_ID_FK = @partidaId
+                              AND l.Tipo = 'grupo'
+                        `);
+
+                    logrosPorEquipo[equipo] = logrosQuery.recordset;
+                } else {
+                    logrosPorEquipo[equipo] = [];
+                }
+            }
+
+            return res.status(200).json({
                 partida,
                 equipos: miembrosPorEquipo,
                 resultados: resultadosPorEquipo,
@@ -341,16 +354,17 @@ export const getResults = async (req, res) => {
                 `);
 
             const logrosQuery = await pool.request()
+                .input('userId', sql.Int, userId)
                 .input('partidaId', sql.Int, partidaId)
-                .input('equipo', sql.Int, equipoNumero)
                 .query(`
                     SELECT l.*
-                    FROM Partida_Logros_TB pl
-                    JOIN Logros_TB l ON pl.Logro_ID_FK = l.Logro_ID_PK
-                    WHERE pl.Partida_ID_FK = @partidaId AND pl.Equipo = @equipo AND l.Tipo = 'grupo'
+                    FROM Usuario_Logros_TB ul
+                    JOIN Logros_TB l ON ul.Logro_ID_FK = l.Logro_ID_PK
+                    WHERE ul.Usuario_ID_FK = @userId AND ul.Partida_ID_FK = @partidaId
+                      AND l.Tipo IN ('grupo', 'usuario', 'especial')
                 `);
 
-            res.status(200).json({
+            return res.status(200).json({
                 partida,
                 equipo: {
                     numero: equipoNumero,
@@ -363,7 +377,9 @@ export const getResults = async (req, res) => {
 
     } catch (error) {
         console.error('Error al obtener resultados:', error);
-        res.status(500).json({ message: 'Error al obtener resultados' });
+        return res.status(500).json({ message: 'Error al obtener resultados' });
     }
 };
+
+
 
