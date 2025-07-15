@@ -260,21 +260,19 @@ export const getResults = async (req, res) => {
 
             // Obtener resultados por equipo
             const resultadosPromises = equipos.map(async equipo => {
-            const resultadosQuery = await pool.request()
-                .input('partidaId', sql.Int, partidaId)
-                .input('equipo', sql.Int, equipo) // ✅ Esto era lo que faltaba
-                .query(`
-                    SELECT r.*, u.Nombre, u.Apellido1, u.Apellido2
-                    FROM Resultados_TB r
-                    JOIN Usuario_TB u ON r.Usuario_ID_FK = u.Usuario_ID_PK
-                    JOIN Participantes_TB p ON r.Usuario_ID_FK = p.Usuario_ID_FK AND r.Partida_ID_FK = p.Partida_ID_FK
-                    WHERE r.Partida_ID_FK = @partidaId AND p.Equipo_Numero = @equipo
-                `);
-            return {
-                equipo,
-                resultados: resultadosQuery.recordset
-            };
-        });
+                const resultadosQuery = await pool.request()
+                    .input('partidaId', sql.Int, partidaId)
+                    .input('equipo', sql.Int, equipo)
+                    .query(`
+                        SELECT *
+                        FROM Resultados_TB
+                        WHERE Partida_ID_FK = @partidaId AND Equipo_Numero = @equipo
+                    `);
+                return {
+                    equipo,
+                    resultados: resultadosQuery.recordset
+                };
+            });
 
             const resultadosPorEquipo = await Promise.all(resultadosPromises);
 
@@ -306,7 +304,15 @@ export const getResults = async (req, res) => {
             const equipoQuery = await pool.request()
                 .input('userId', sql.Int, userId)
                 .input('partidaId', sql.Int, partidaId)
-                .query('SELECT Equipo_Numero FROM Participantes_TB WHERE Usuario_ID_FK = @userId AND Partida_ID_FK = @partidaId');
+                .query(`
+                    SELECT Equipo_Numero 
+                    FROM Participantes_TB 
+                    WHERE Usuario_ID_FK = @userId AND Partida_ID_FK = @partidaId
+                `);
+
+            if (equipoQuery.recordset.length === 0) {
+                return res.status(200).json({ message: 'No participaste en esta partida' });
+            }
 
             const equipoNumero = equipoQuery.recordset[0].Equipo_Numero;
 
@@ -326,11 +332,9 @@ export const getResults = async (req, res) => {
                 .input('partidaId', sql.Int, partidaId)
                 .input('equipo', sql.Int, equipoNumero)
                 .query(`
-                    SELECT r.*, u.Nombre, u.Apellido1, u.Apellido2
-                    FROM Resultados_TB r
-                    JOIN Usuario_TB u ON r.Usuario_ID_FK = u.Usuario_ID_PK
-                    JOIN Participantes_TB p ON r.Usuario_ID_FK = p.Usuario_ID_FK AND r.Partida_ID_FK = p.Partida_ID_FK
-                    WHERE r.Partida_ID_FK = @partidaId AND p.Equipo_Numero = @equipo
+                    SELECT *
+                    FROM Resultados_TB
+                    WHERE Partida_ID_FK = @partidaId AND Equipo_Numero = @equipo
                 `);
 
             // Obtener logros del equipo
