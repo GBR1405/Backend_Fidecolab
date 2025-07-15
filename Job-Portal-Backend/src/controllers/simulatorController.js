@@ -209,7 +209,6 @@ export const getResults = async (req, res) => {
 
         // 2. Verificar permisos del usuario
         if (rol === 'Profesor') {
-            // Si es profesor, verificar que sea el creador de la partida
             if (partida.Profesor_ID_FK !== userId) {
                 return res.status(403).json({ message: 'No tienes permiso para ver estos resultados' });
             }
@@ -218,26 +217,29 @@ export const getResults = async (req, res) => {
             const participanteQuery = await pool.request()
                 .input('userId', sql.Int, userId)
                 .input('partidaId', sql.Int, partidaId)
-                .query('SELECT * FROM Participantes_TB WHERE Usuario_ID_FK = @userId AND Partida_ID_FK = @partidaId');
+                .query(`
+                    SELECT * 
+                    FROM Participantes_TB 
+                    WHERE Usuario_ID_FK = @userId AND Partida_ID_FK = @partidaId
+                `);
 
             if (participanteQuery.recordset.length === 0) {
                 return res.status(403).json({ message: 'No participaste en esta partida' });
             }
         }
 
-        // 3. Obtener datos según el rol
         if (rol === 'Profesor') {
-            // Obtener todos los equipos de la partida
+            // Obtener equipos de la partida
             const equiposQuery = await pool.request()
                 .input('partidaId', sql.Int, partidaId)
                 .query(`
-                    SELECT DISTINCT Equipo_Numero 
-                    FROM Participantes_TB 
+                    SELECT DISTINCT Equipo 
+                    FROM Resultados_TB
                     WHERE Partida_ID_FK = @partidaId
-                    ORDER BY Equipo_Numero
+                    ORDER BY Equipo
                 `);
 
-            const equipos = equiposQuery.recordset.map(e => e.Equipo_Numero);
+            const equipos = equiposQuery.recordset.map(e => e.Equipo);
 
             // Obtener miembros de cada equipo
             const miembrosPromises = equipos.map(async equipo => {
@@ -266,7 +268,7 @@ export const getResults = async (req, res) => {
                     .query(`
                         SELECT *
                         FROM Resultados_TB
-                        WHERE Partida_ID_FK = @partidaId AND Equipo_Numero = @equipo
+                        WHERE Partida_ID_FK = @partidaId AND Equipo = @equipo
                     `);
                 return {
                     equipo,
@@ -276,19 +278,19 @@ export const getResults = async (req, res) => {
 
             const resultadosPorEquipo = await Promise.all(resultadosPromises);
 
-            // Obtener logros de la partida (a nivel de equipo)
+            // Obtener logros de la partida a nivel de grupo
             const logrosQuery = await pool.request()
                 .input('partidaId', sql.Int, partidaId)
                 .query(`
-                    SELECT l.*, pl.Equipo_Numero
+                    SELECT l.*, pl.Equipo
                     FROM Partida_Logros_TB pl
                     JOIN Logros_TB l ON pl.Logro_ID_FK = l.Logro_ID_PK
                     WHERE pl.Partida_ID_FK = @partidaId AND l.Tipo = 'grupo'
                 `);
 
             const logrosPorEquipo = logrosQuery.recordset.reduce((acc, logro) => {
-                if (!acc[logro.Equipo_Numero]) acc[logro.Equipo_Numero] = [];
-                acc[logro.Equipo_Numero].push(logro);
+                if (!acc[logro.Equipo]) acc[logro.Equipo] = [];
+                acc[logro.Equipo].push(logro);
                 return acc;
             }, {});
 
@@ -300,7 +302,7 @@ export const getResults = async (req, res) => {
             });
 
         } else {
-            // Si es estudiante, obtener solo su equipo
+            // Estudiante: obtener su equipo
             const equipoQuery = await pool.request()
                 .input('userId', sql.Int, userId)
                 .input('partidaId', sql.Int, partidaId)
@@ -311,12 +313,14 @@ export const getResults = async (req, res) => {
                 `);
 
             if (equipoQuery.recordset.length === 0) {
-                return res.status(200).json({ message: 'No participaste en esta partida' });
+                return res.status(200).json({
+                    partida,
+                    equipo: null
+                });
             }
 
             const equipoNumero = equipoQuery.recordset[0].Equipo_Numero;
 
-            // Obtener miembros del equipo
             const miembrosQuery = await pool.request()
                 .input('partidaId', sql.Int, partidaId)
                 .input('equipo', sql.Int, equipoNumero)
@@ -327,17 +331,15 @@ export const getResults = async (req, res) => {
                     WHERE p.Partida_ID_FK = @partidaId AND p.Equipo_Numero = @equipo
                 `);
 
-            // Obtener resultados del equipo
             const resultadosQuery = await pool.request()
                 .input('partidaId', sql.Int, partidaId)
                 .input('equipo', sql.Int, equipoNumero)
                 .query(`
                     SELECT *
                     FROM Resultados_TB
-                    WHERE Partida_ID_FK = @partidaId AND Equipo_Numero = @equipo
+                    WHERE Partida_ID_FK = @partidaId AND Equipo = @equipo
                 `);
 
-            // Obtener logros del equipo
             const logrosQuery = await pool.request()
                 .input('partidaId', sql.Int, partidaId)
                 .input('equipo', sql.Int, equipoNumero)
@@ -345,7 +347,7 @@ export const getResults = async (req, res) => {
                     SELECT l.*
                     FROM Partida_Logros_TB pl
                     JOIN Logros_TB l ON pl.Logro_ID_FK = l.Logro_ID_PK
-                    WHERE pl.Partida_ID_FK = @partidaId AND pl.Equipo_Numero = @equipo AND l.Tipo = 'grupo'
+                    WHERE pl.Partida_ID_FK = @partidaId AND pl.Equipo = @equipo AND l.Tipo = 'grupo'
                 `);
 
             res.status(200).json({
@@ -364,3 +366,4 @@ export const getResults = async (req, res) => {
         res.status(500).json({ message: 'Error al obtener resultados' });
     }
 };
+
