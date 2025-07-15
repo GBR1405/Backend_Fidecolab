@@ -260,20 +260,21 @@ export const getResults = async (req, res) => {
 
             // Obtener resultados por equipo
             const resultadosPromises = equipos.map(async equipo => {
-                const resultadosQuery = await pool.request()
-                    .input('partidaId', sql.Int, partidaId)
-                    .query(`
-                        SELECT r.*, u.Nombre, u.Apellido1, u.Apellido2
-                        FROM Resultados_TB r
-                        JOIN Usuario_TB u ON r.Usuario_ID_FK = u.Usuario_ID_PK
-                        JOIN Participantes_TB p ON r.Usuario_ID_FK = p.Usuario_ID_FK AND r.Partida_ID_FK = p.Partida_ID_FK
-                        WHERE r.Partida_ID_FK = @partidaId AND p.Equipo_Numero = @equipo
-                    `);
-                return {
-                    equipo,
-                    resultados: resultadosQuery.recordset
-                };
-            });
+            const resultadosQuery = await pool.request()
+                .input('partidaId', sql.Int, partidaId)
+                .input('equipo', sql.Int, equipo) // ✅ Esto era lo que faltaba
+                .query(`
+                    SELECT r.*, u.Nombre, u.Apellido1, u.Apellido2
+                    FROM Resultados_TB r
+                    JOIN Usuario_TB u ON r.Usuario_ID_FK = u.Usuario_ID_PK
+                    JOIN Participantes_TB p ON r.Usuario_ID_FK = p.Usuario_ID_FK AND r.Partida_ID_FK = p.Partida_ID_FK
+                    WHERE r.Partida_ID_FK = @partidaId AND p.Equipo_Numero = @equipo
+                `);
+            return {
+                equipo,
+                resultados: resultadosQuery.recordset
+            };
+        });
 
             const resultadosPorEquipo = await Promise.all(resultadosPromises);
 
