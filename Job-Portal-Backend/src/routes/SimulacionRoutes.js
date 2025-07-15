@@ -7,6 +7,6 @@ const router = express.Router();
 router.get('/check-participation',authMiddleware, checkParticipation);
 router.get('/checkgroup',authMiddleware, checkGroup);
 router.post('/check-activity',authMiddleware, checkActivity);
-router.get('/:partidaId', authMiddleware, getResults);
+router.get('/resultados/:partidaId', authMiddleware, getResults);
 
 export default router;
