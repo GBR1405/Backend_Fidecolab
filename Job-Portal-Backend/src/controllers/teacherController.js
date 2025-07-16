@@ -82,180 +82,132 @@ export const obtenerGruposVinculados = async (req, res) => {
 
 export const agregarEstudiante = async (req, res) => {
   try {
-      console.log("Datos recibidos", req.body);
-      const { manual, estudiantes } = req.body;
-      let estudiantesData = [];
-      let saltados = 0;
-      let nuevosEstudiantes = [];
+    const { manual, estudiantes } = req.body;
+    let estudiantesData = [];
+    let saltados = 0;
+    let nuevosEstudiantes = [];
 
-      // Obtener el ID del rol 'Estudiante'
-      const pool = await poolPromise;
-      const rolResult = await pool.request().query(`SELECT Rol_ID_PK FROM Rol_TB WHERE Rol = 'Estudiante'`);
+    const pool = await poolPromise;
+    const rolResult = await pool.request().query(`SELECT Rol_ID_PK FROM Rol_TB WHERE Rol = 'Estudiante'`);
+    if (rolResult.recordset.length === 0) {
+      return res.status(400).json({ mensaje: "El rol 'Estudiante' no está disponible." });
+    }
+    const rolId = rolResult.recordset[0].Rol_ID_PK;
 
-      if (rolResult.recordset.length === 0) {
-          return res.status(400).json({ mensaje: "El rol 'Estudiante' no está disponible en la base de datos." });
+    if (manual === "true") {
+      const { name, lastName1, lastName2, email, gender, grupoId } = req.body;
+      if (!name || !lastName1 || !lastName2 || !email || !gender || !grupoId) {
+        return res.status(400).json({ message: 'Todos los campos son obligatorios' });
       }
+      const generatedPassword = generatePassword(name);
+      const hashedPassword = await bcrypt.hash(generatedPassword, 10);
+      estudiantesData.push({ name, lastName1, lastName2, email, password: hashedPassword, generatedPassword, rolId, generoId: gender, grupoId });
+    } else {
+      if (!estudiantes || estudiantes.length === 0) {
+        return res.status(400).json({ mensaje: "No se han recibido datos de estudiantes." });
+      }
+      estudiantesData = estudiantes.map(est => {
+        const generatedPassword = generatePassword(est.name);
+        return {
+          name: est.name,
+          lastName1: est.lastName1,
+          lastName2: est.lastName2,
+          email: est.email,
+          password: bcrypt.hashSync(generatedPassword, 10),
+          generatedPassword,
+          rolId,
+          generoId: est.gender,
+          grupoId: req.body.grupoId
+        };
+      });
+    }
 
-      const rolId = rolResult.recordset[0].Rol_ID_PK;
-      console.log('ID del rol de Estudiante:', rolId);
+    for (const est of estudiantesData) {
+      const existingUser = await pool.request()
+        .input("email", sql.NVarChar, est.email)
+        .query(`SELECT Usuario_ID_PK FROM Usuario_TB WHERE Correo = @email`);
 
-      if (manual === "true") {
-          const { name, lastName1, lastName2, email, gender, grupoId } = req.body;
+      let usuarioId;
+      if (existingUser.recordset.length > 0) {
+        usuarioId = existingUser.recordset[0].Usuario_ID_PK;
+        const grupoCheck = await pool.request()
+          .input("usuarioId", sql.Int, usuarioId)
+          .query(`SELECT GrupoCurso_ID_FK FROM GrupoVinculado_TB WHERE Usuario_ID_FK = @usuarioId`);
 
-          if (!name || !lastName1 || !lastName2 || !email || !gender || !grupoId) {
-              return res.status(400).json({ message: 'Todos los campos son obligatorios' });
+        if (grupoCheck.recordset.length === 0) {
+          const grupoCursoQuery = await pool.request()
+            .input("gruposEncargadosId", sql.Int, est.grupoId)
+            .query(`SELECT GrupoCurso_ID_FK FROM GrupoVinculado_TB WHERE GruposEncargados_ID_PK = @gruposEncargadosId`);
+
+          if (grupoCursoQuery.recordset.length === 0) {
+            return res.status(400).json({ mensaje: "Grupo inválido para este ID." });
           }
 
-          const generatedPassword = generatePassword(name);
-          const hashedPassword = await bcrypt.hash(generatedPassword, 10);
-
-          estudiantesData.push({
-              name,
-              lastName1,
-              lastName2,
-              email,
-              password: hashedPassword,
-              generatedPassword,
-              rolId,
-              generoId: gender,
-              grupoId
-          });
-
+          const grupoCursoId = grupoCursoQuery.recordset[0].GrupoCurso_ID_FK;
+          await pool.request()
+            .input("usuarioId", sql.Int, usuarioId)
+            .input("grupoCursoId", sql.Int, grupoCursoId)
+            .query(`INSERT INTO GrupoVinculado_TB (Usuario_ID_FK, GrupoCurso_ID_FK) VALUES (@usuarioId, @grupoCursoId)`);
+        }
+        saltados++;
       } else {
-          if (!estudiantes || estudiantes.length === 0) {
-              return res.status(400).json({ mensaje: "No se han recibido datos de estudiantes." });
+        const result = await pool.request()
+          .input("name", sql.NVarChar, est.name)
+          .input("lastName1", sql.NVarChar, est.lastName1)
+          .input("lastName2", sql.NVarChar, est.lastName2)
+          .input("email", sql.NVarChar, est.email)
+          .input("password", sql.NVarChar, est.password)
+          .input("rolId", sql.Int, est.rolId)
+          .input("generoId", sql.Int, est.generoId)
+          .input("estado", sql.Bit, 1)
+          .query(`
+            INSERT INTO Usuario_TB (Nombre, Apellido1, Apellido2, Correo, Contraseña, Rol_ID_FK, Genero_ID_FK, Estado)
+            OUTPUT INSERTED.Usuario_ID_PK
+            VALUES (@name, @lastName1, @lastName2, @email, @password, @rolId, @generoId, @estado)
+          `);
+        if (result.recordset.length > 0) {
+          usuarioId = result.recordset[0].Usuario_ID_PK;
+          const grupoCursoQuery = await pool.request()
+            .input("gruposEncargadosId", sql.Int, est.grupoId)
+            .query(`SELECT GrupoCurso_ID_FK FROM GrupoVinculado_TB WHERE GruposEncargados_ID_PK = @gruposEncargadosId`);
+          if (grupoCursoQuery.recordset.length === 0) {
+            return res.status(400).json({ mensaje: "Grupo inválido para este ID." });
           }
-
-          estudiantesData = estudiantes.map(est => {
-              const generatedPassword = generatePassword(est.name);
-              return {
-                  name: est.name,
-                  lastName1: est.lastName1,
-                  lastName2: est.lastName2,
-                  email: est.email,
-                  password: bcrypt.hashSync(generatedPassword, 10),
-                  generatedPassword,
-                  rolId,
-                  generoId: est.gender,
-                  grupoId: req.body.grupoId
-              };
-          });
+          const grupoCursoId = grupoCursoQuery.recordset[0].GrupoCurso_ID_FK;
+          await pool.request()
+            .input("usuarioId", sql.Int, usuarioId)
+            .input("grupoCursoId", sql.Int, grupoCursoId)
+            .query(`INSERT INTO GrupoVinculado_TB (Usuario_ID_FK, GrupoCurso_ID_FK) VALUES (@usuarioId, @grupoCursoId)`);
+          nuevosEstudiantes.push(est);
+        }
       }
+    }
 
-      for (const est of estudiantesData) {
-          console.log('Procesando estudiante:', est);
+    let pdfBase64 = null;
+    let mensaje = '';
 
-          let existingUserResult = await pool.request()
-              .input("email", sql.NVarChar, est.email)
-              .query(`SELECT Usuario_ID_PK FROM Usuario_TB WHERE Correo = @email`);
-
-          let usuarioId;
-          if (existingUserResult.recordset.length > 0) {
-              usuarioId = existingUserResult.recordset[0].Usuario_ID_PK;
-              console.log(`El correo ${est.email} ya existe. Verificando su grupo.`);
-
-              let grupoAsignado = await pool.request()
-                  .input("usuarioId", sql.Int, usuarioId)
-                  .query(`SELECT GrupoCurso_ID_FK FROM GrupoVinculado_TB WHERE Usuario_ID_FK = @usuarioId`);
-
-              if (grupoAsignado.recordset.length === 0) {
-                  console.log(`El usuario ${est.email} no tiene un grupo asignado. Se asignará el grupo ${est.grupoId}`);
-
-                  // 🔴 Hacer el SELECT para obtener el GrupoCurso_ID_FK real
-                  let grupoCursoQuery = await pool.request()
-                      .input("gruposEncargadosId", sql.Int, est.grupoId)
-                      .query(`SELECT GrupoCurso_ID_FK FROM GrupoVinculado_TB WHERE GruposEncargados_ID_PK = @gruposEncargadosId`);
-
-                  if (grupoCursoQuery.recordset.length === 0) {
-                      return res.status(400).json({ mensaje: "No se encontró un grupo válido para este ID." });
-                  }
-
-                  const grupoCursoId = grupoCursoQuery.recordset[0].GrupoCurso_ID_FK;
-
-                  // 🔵 Insertar con el GrupoCurso_ID_FK real
-                  await pool.request()
-                      .input("usuarioId", sql.Int, usuarioId)
-                      .input("grupoCursoId", sql.Int, grupoCursoId)
-                      .query(`INSERT INTO GrupoVinculado_TB (Usuario_ID_FK, GrupoCurso_ID_FK) VALUES (@usuarioId, @grupoCursoId)`);
-              } else {
-                  console.log(`El usuario ${est.email} ya está vinculado a un grupo. No se realiza ninguna acción.`);
-              }
-
-              saltados++;
-
-          } else {
-              const result = await pool.request()
-                  .input("name", sql.NVarChar, est.name)
-                  .input("lastName1", sql.NVarChar, est.lastName1)
-                  .input("lastName2", sql.NVarChar, est.lastName2)
-                  .input("email", sql.NVarChar, est.email)
-                  .input("password", sql.NVarChar, est.password)
-                  .input("rolId", sql.Int, est.rolId)
-                  .input("generoId", sql.Int, est.generoId)
-                  .input("estado", sql.Bit, 1)
-                  .query(`
-                      INSERT INTO Usuario_TB (Nombre, Apellido1, Apellido2, Correo, Contraseña, Rol_ID_FK, Genero_ID_FK, Estado) 
-                      OUTPUT INSERTED.Usuario_ID_PK
-                      VALUES (@name, @lastName1, @lastName2, @email, @password, @rolId, @generoId, @estado)
-                  `);
-
-              if (result.recordset.length > 0) {
-                  usuarioId = result.recordset[0].Usuario_ID_PK;
-                  console.log('Estudiante insertado correctamente:', est);
-
-                  // 🔴 Hacer el SELECT para obtener el GrupoCurso_ID_FK real
-                  let grupoCursoQuery = await pool.request()
-                      .input("gruposEncargadosId", sql.Int, est.grupoId)
-                      .query(`SELECT GrupoCurso_ID_FK FROM GrupoVinculado_TB WHERE GruposEncargados_ID_PK = @gruposEncargadosId`);
-
-                  if (grupoCursoQuery.recordset.length === 0) {
-                      return res.status(400).json({ mensaje: "No se encontró un grupo válido para este ID." });
-                  }
-
-                  const grupoCursoId = grupoCursoQuery.recordset[0].GrupoCurso_ID_FK;
-
-                  // 🔵 Insertar con el GrupoCurso_ID_FK real
-                  await pool.request()
-                      .input("usuarioId", sql.Int, usuarioId)
-                      .input("grupoCursoId", sql.Int, grupoCursoId)
-                      .query(`INSERT INTO GrupoVinculado_TB (Usuario_ID_FK, GrupoCurso_ID_FK) VALUES (@usuarioId, @grupoCursoId)`);
-
-                  nuevosEstudiantes.push(est);
-              } else {
-                  return res.status(400).json({ mensaje: "No se pudo insertar el nuevo usuario." });
-              }
-          }
-      }
-
-      let pdfPath = '';
-      if (nuevosEstudiantes.length > 0) {
-          pdfPath = await generatePDF(nuevosEstudiantes, saltados);
-      } else {
-          pdfPath = await generatePDF([], saltados);
-      }
-
+    if (nuevosEstudiantes.length > 0) {
+      const pdfPath = await generatePDF(nuevosEstudiantes, saltados);
       const pdfBuffer = fs.readFileSync(pdfPath);
-      const pdfBase64 = pdfBuffer.toString('base64');
-
-      const mensaje = saltados === estudiantesData.length
-          ? 'Se omitieron el ingreso de estudiantes y se agregaron al grupo aquellos que no estaban vinculados a uno (Si no fueron agregados significa que estan vinculados a un curso, si es asi llamar a administracion para la desvinculacion)'
-          : `Se omitieron ${saltados} estudiantes por estar ya registrados y se agregaron al grupo aquellos que no estaban vinculados a uno`;
-
-      res.json({
-          success: true,
-          pdfBase64,
-          mensaje
-      });
-
+      pdfBase64 = pdfBuffer.toString('base64');
+      mensaje = saltados === 0
+        ? 'Todos los estudiantes fueron agregados correctamente.'
+        : `Se omitieron ${saltados} estudiantes por estar ya registrados o vinculados.`;
       fs.unlink(pdfPath, (err) => {
-          if (err) console.error("Error al eliminar el archivo PDF:", err);
+        if (err) console.error("Error al eliminar el archivo PDF:", err);
       });
+    } else {
+      mensaje = 'Se omitieron todos los estudiantes y no se agregaron nuevos.';
+    }
+
+    res.json({ success: true, pdfBase64, mensaje });
 
   } catch (error) {
-      console.error("Error al agregar estudiantes:", error);
-      res.status(500).json({ mensaje: "Error interno del servidor" });
+    console.error("Error al agregar estudiantes:", error);
+    res.status(500).json({ mensaje: "Error interno del servidor" });
   }
 };
+
 
 export const obtenerEstudiantesPorProfesor = async (req, res) => {
   try {
@@ -561,75 +513,128 @@ export const cancelarPartida = async (req, res) => {
 
 
   // Función para generar una contraseña aleatoria
-function generatePassword(name) {
-    const randomNumber = Math.floor(10000 + Math.random() * 90000);
-    return `${name}${randomNumber}`;
-  }
+function generatePassword(nombre) {
+  const base = nombre.trim().toLowerCase();
+  const random = Math.random().toString(36).slice(-4);
+  const capital = nombre[0].toUpperCase();
+  const num = Math.floor(100 + Math.random() * 900);
+  return `${capital}${base.slice(1)}${num}${random}`;
+}
   
   // Función para generar el PDF
-  async function generatePDF(profesores) {
-    const pdf = new PDFDocument();
-    const filePath = `./profesores_${Date.now()}.pdf`;
-    const writeStream = fs.createWriteStream(filePath);
-  
-    // Pipe el PDF al archivo
-    pdf.pipe(writeStream);
-  
-    // Título de la página
-    pdf.fontSize(20).text("Credenciales de Profesores", { align: "center" });
-    pdf.moveDown(2);
-  
-    // Dibujar la cabecera de la tabla con fondo azul
-    const startX = 50;
-    let startY = pdf.y;
-    const columnWidths = [100, 100, 100, 100, 100]; // Ancho de cada columna
-  
-    pdf.fillColor('#3b82f6')  // Fondo azul
-      .rect(startX, startY, columnWidths.reduce((a, b) => a + b), 30)  // Cabecera de la tabla
-      .fill()
-      .stroke();
-  
-    pdf.fillColor('#FFFFFF')  // Color del texto
-      .fontSize(12)
-      .text('Correo', startX, startY + 7, { width: columnWidths[0], align: 'center' })
-      .text('Contraseña', startX + columnWidths[0], startY + 7, { width: columnWidths[1], align: 'center' })
-      .text('Nombre', startX + columnWidths[0] + columnWidths[1], startY + 7, { width: columnWidths[2], align: 'center' })
-      .text('Apellido', startX + columnWidths[0] + columnWidths[1] + columnWidths[2], startY + 7, { width: columnWidths[3], align: 'center' })
-      .text('Género', startX + columnWidths[0] + columnWidths[1] + columnWidths[2] + columnWidths[3], startY + 7, { width: columnWidths[4], align: 'center' });
-    
-    pdf.moveDown();
-  
-    // Línea separadora entre el encabezado y las filas
-    startY += 30;
-    pdf.moveTo(startX, startY).lineTo(startX + columnWidths.reduce((a, b) => a + b), startY).stroke();
-    startY += 5;
-  
-    // Añadir filas de la tabla
-    profesores.forEach((prof, index) => {
-      pdf.rect(startX, startY, columnWidths.reduce((a, b) => a + b), 30)  // Borde de las filas
-        .fill('#FFFFFF')  // Color de fondo de las filas
-        .stroke();
-  
-      pdf.fillColor('#000000')
-        .text(prof.email, startX, startY + 7, { width: columnWidths[0], align: 'center' })
-        .text(prof.generatedPassword, startX + columnWidths[0], startY + 7, { width: columnWidths[1], align: 'center' })
-        .text(prof.name, startX + columnWidths[0] + columnWidths[1], startY + 7, { width: columnWidths[2], align: 'center' })
-        .text(prof.lastName1, startX + columnWidths[0] + columnWidths[1] + columnWidths[2], startY + 7, { width: columnWidths[3], align: 'center' });
-  
-      // Línea separadora entre las filas
-      startY += 30;
-      pdf.moveTo(startX, startY).lineTo(startX + columnWidths.reduce((a, b) => a + b), startY).stroke();
-      startY += 5;
+  // Generador de contraseñas fuertes
+function generatePassword(nombre) {
+  const base = nombre.trim().toLowerCase();
+  const random = Math.random().toString(36).slice(-4);
+  const capital = nombre[0].toUpperCase();
+  const num = Math.floor(100 + Math.random() * 900);
+  return `${capital}${base.slice(1)}${num}${random}`;
+}
+
+// PDF para estudiantes
+async function generatePDF(estudiantes, saltados) {
+  return new Promise(async (resolve, reject) => {
+    if (estudiantes.length === 0) return resolve("");
+
+    const reportsDir = path.join(process.cwd(), "reports");
+    if (!fs.existsSync(reportsDir)) fs.mkdirSync(reportsDir, { recursive: true });
+
+    const imageUrl = "https://www.coopeande1.com/sites/default/files/styles/420_width_retina/public/2021-01/u_fidelitas.png?itok=DC77XGsA";
+    const imagePath = path.join(reportsDir, "u_fidelitas.png");
+    const writer = fs.createWriteStream(imagePath);
+
+    const imageResponse = await axios({ method: 'get', url: imageUrl, responseType: 'stream' });
+    imageResponse.data.pipe(writer);
+
+    writer.on('finish', () => {
+      const filename = `Estudiantes_Nuevos_${new Date().toISOString().slice(0, 10)}.pdf`;
+      const filePath = path.join(reportsDir, filename);
+      const doc = new PDFDocument({ margin: 40, size: 'A4' });
+      const stream = fs.createWriteStream(filePath);
+      doc.pipe(stream);
+
+      const primaryColor = '#003366';
+      const tableRowHeight = 30;
+      const estudiantesPerPage = 22;
+      let currentY = 80;
+
+      const addHeader = () => {
+        doc.image(imagePath, 50, 20, { width: 80 });
+        doc.fontSize(18).font('Helvetica-Bold').fillColor(primaryColor).text('Universidad Fidelitas', 140, 30);
+        doc.fontSize(10).font('Helvetica').fillColor('#666').text('Sistema de Gestión Académica', 140, 55);
+        doc.moveTo(50, 80).lineTo(550, 80).lineWidth(2).stroke(primaryColor);
+        currentY = 100;
+      };
+
+      const addTitle = () => {
+        doc.fontSize(16).font('Helvetica-Bold').fillColor(primaryColor)
+          .text('REPORTE DE NUEVOS ESTUDIANTES', 0, currentY, { align: 'center' });
+        currentY += 25;
+        doc.fontSize(12).fillColor('black')
+          .text(`Total de estudiantes agregados: ${estudiantes.length}`, { align: 'center' });
+        currentY += 15;
+        const saltadoMsg = saltados === 0
+          ? 'No se omitió ningún estudiante.'
+          : (saltados === estudiantes.length
+              ? 'Se omitieron todos los estudiantes.'
+              : `Se omitieron ${saltados} estudiantes ya existentes o vinculados.`);
+        doc.text(saltadoMsg, { align: 'center' });
+        currentY += 40;
+      };
+
+      const drawTableHeader = () => {
+        const tableLeft = 50;
+        const columnWidths = [160, 170, 120];
+        const tableWidth = columnWidths.reduce((a, b) => a + b, 0);
+
+        doc.rect(tableLeft, currentY, tableWidth, tableRowHeight).fill(primaryColor);
+        let x = tableLeft;
+        doc.fontSize(12).fillColor('white').font('Helvetica-Bold');
+        doc.text('Nombre completo', x + 5, currentY + 8, { width: columnWidths[0] - 10, align: 'center' });
+        x += columnWidths[0];
+        doc.text('Correo electrónico', x + 5, currentY + 8, { width: columnWidths[1] - 10, align: 'center' });
+        x += columnWidths[1];
+        doc.text('Contraseña', x + 5, currentY + 8, { width: columnWidths[2] - 10, align: 'center' });
+
+        currentY += tableRowHeight;
+        return columnWidths;
+      };
+
+      const totalPages = Math.ceil(estudiantes.length / estudiantesPerPage);
+      for (let i = 0; i < totalPages; i++) {
+        if (i > 0) doc.addPage();
+        addHeader();
+        if (i === 0) addTitle();
+        const columnWidths = drawTableHeader();
+        const estSlice = estudiantes.slice(i * estudiantesPerPage, (i + 1) * estudiantesPerPage);
+
+        estSlice.forEach((est, idx) => {
+          const tableLeft = 50;
+          const tableWidth = columnWidths.reduce((a, b) => a + b, 0);
+          if (idx % 2 === 0) {
+            doc.rect(tableLeft, currentY, tableWidth, tableRowHeight).fill('#f5f5f5');
+          }
+
+          let x = tableLeft;
+          const fullName = `${est.name} ${est.lastName1} ${est.lastName2}`;
+          doc.fillColor('black').font('Helvetica').fontSize(10);
+          doc.text(fullName, x + 5, currentY + 5, { width: columnWidths[0] - 10 });
+          x += columnWidths[0];
+          doc.text(est.email, x + 5, currentY + 5, { width: columnWidths[1] - 10 });
+          x += columnWidths[1];
+          doc.text(est.generatedPassword, x + 5, currentY + 5, { width: columnWidths[2] - 10, align: 'center' });
+
+          currentY += tableRowHeight;
+        });
+      }
+
+      doc.end();
+      stream.on('finish', () => resolve(filePath));
     });
-  
-    // Terminar el PDF
-    pdf.end();
-  
-    // Asegurarse de que el archivo esté completamente escrito antes de retornar el path
-    return new Promise((resolve, reject) => {
-      writeStream.on('finish', () => resolve(filePath));  // Si se completa la escritura
-      writeStream.on('error', reject);  // Si hay un error
-    });
-  }
+
+    writer.on('error', reject);
+  });
+}
+
   
   export { generatePDF };
