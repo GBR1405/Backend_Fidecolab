@@ -193,6 +193,11 @@ export const getResults = async (req, res) => {
   const userId = req.user.id;
   const { rol } = req.user;
 
+  console.log("🔐 Usuario autenticado:");
+  console.log("- ID:", userId);
+  console.log("- Rol:", rol);
+  console.log("- Partida solicitada:", partidaId);
+
   try {
     const pool = await poolPromise;
 
@@ -202,18 +207,23 @@ export const getResults = async (req, res) => {
       .query('SELECT * FROM Partida_TB WHERE Partida_ID_PK = @partidaId');
 
     if (partidaQuery.recordset.length === 0) {
+      console.log("❌ Partida no encontrada:", partidaId);
       return res.status(404).json({ message: 'Partida no encontrada' });
     }
 
     const partida = partidaQuery.recordset[0];
+    console.log("✅ Partida encontrada:", partida.Partida_ID_PK);
 
-    // 2. Si es profesor, verificar que sea dueño de la partida
+    // 2. Si es profesor
     if (rol === 'Profesor') {
       if (partida.Profesor_ID_FK !== userId) {
+        console.log(`❌ Profesor ${userId} no tiene permiso para ver partida ${partidaId}`);
         return res.status(403).json({ message: 'No tienes permiso para ver estos resultados' });
       }
 
-      // Obtener todos los equipos de la partida
+      console.log(`✅ Profesor ${userId} autorizado. Obteniendo resultados...`);
+
+      // Equipos de la partida
       const equiposQuery = await pool.request()
         .input('partidaId', sql.Int, partidaId)
         .query(`
@@ -225,7 +235,6 @@ export const getResults = async (req, res) => {
 
       const equipos = equiposQuery.recordset.map(e => e.Equipo);
 
-      // Obtener miembros de cada equipo
       const miembrosPorEquipo = await Promise.all(equipos.map(async equipo => {
         const miembrosQuery = await pool.request()
           .input('partidaId', sql.Int, partidaId)
@@ -236,13 +245,9 @@ export const getResults = async (req, res) => {
             JOIN Usuario_TB u ON p.Usuario_ID_FK = u.Usuario_ID_PK
             WHERE p.Partida_ID_FK = @partidaId AND p.Equipo_Numero = @equipo
           `);
-        return {
-          equipo,
-          miembros: miembrosQuery.recordset
-        };
+        return { equipo, miembros: miembrosQuery.recordset };
       }));
 
-      // Obtener resultados por equipo
       const resultadosPorEquipo = await Promise.all(equipos.map(async equipo => {
         const resultadosQuery = await pool.request()
           .input('partidaId', sql.Int, partidaId)
@@ -252,13 +257,9 @@ export const getResults = async (req, res) => {
             FROM Resultados_TB
             WHERE Partida_ID_FK = @partidaId AND Equipo = @equipo
           `);
-        return {
-          equipo,
-          resultados: resultadosQuery.recordset
-        };
+        return { equipo, resultados: resultadosQuery.recordset };
       }));
 
-      // Obtener logros por equipo (tipo grupo)
       const logrosPorEquipo = {};
       for (const equipo of equipos) {
         const userQuery = await pool.request()
@@ -290,6 +291,7 @@ export const getResults = async (req, res) => {
         }
       }
 
+      console.log("✅ Resultados para profesor obtenidos correctamente");
       return res.status(200).json({
         partida,
         equipos: miembrosPorEquipo,
@@ -300,73 +302,78 @@ export const getResults = async (req, res) => {
 
     // 3. Si es estudiante
     if (rol === 'Estudiante') {
-  // Verificar que el estudiante participó en la partida
-  const participanteQuery = await pool.request()
-    .input('userId', sql.Int, userId)
-    .input('partidaId', sql.Int, partidaId)
-    .query(`
-      SELECT Equipo_Numero 
-      FROM Participantes_TB 
-      WHERE Usuario_ID_FK = @userId AND Partida_ID_FK = @partidaId
-    `);
+      console.log(`🎓 Verificando participación del estudiante ${userId}`);
 
-  if (participanteQuery.recordset.length === 0) {
-    console.log(`Estudiante ${userId} no participó en la partida ${partidaId}`);
-    return res.status(403).json({ message: 'No participaste en esta partida' });
-  }
+      const participanteQuery = await pool.request()
+        .input('userId', sql.Int, userId)
+        .input('partidaId', sql.Int, partidaId)
+        .query(`
+          SELECT Equipo_Numero 
+          FROM Participantes_TB 
+          WHERE Usuario_ID_FK = @userId AND Partida_ID_FK = @partidaId
+        `);
 
-  const equipoNumero = participanteQuery.recordset[0].Equipo_Numero;
+      if (participanteQuery.recordset.length === 0) {
+        console.log(`❌ Estudiante ${userId} no participó en la partida ${partidaId}`);
+        return res.status(403).json({ message: 'No participaste en esta partida' });
+      }
 
-  const miembrosQuery = await pool.request()
-    .input('partidaId', sql.Int, partidaId)
-    .input('equipo', sql.Int, equipoNumero)
-    .query(`
-      SELECT u.Usuario_ID_PK, u.Nombre, u.Apellido1, u.Apellido2
-      FROM Participantes_TB p
-      JOIN Usuario_TB u ON p.Usuario_ID_FK = u.Usuario_ID_PK
-      WHERE p.Partida_ID_FK = @partidaId AND p.Equipo_Numero = @equipo
-    `);
+      const equipoNumero = participanteQuery.recordset[0].Equipo_Numero;
+      console.log(`✅ Estudiante ${userId} participó en el equipo ${equipoNumero}`);
 
-  const resultadosQuery = await pool.request()
-    .input('partidaId', sql.Int, partidaId)
-    .input('equipo', sql.Int, equipoNumero)
-    .query(`
-      SELECT *
-      FROM Resultados_TB
-      WHERE Partida_ID_FK = @partidaId AND Equipo = @equipo
-    `);
+      const miembrosQuery = await pool.request()
+        .input('partidaId', sql.Int, partidaId)
+        .input('equipo', sql.Int, equipoNumero)
+        .query(`
+          SELECT u.Usuario_ID_PK, u.Nombre, u.Apellido1, u.Apellido2
+          FROM Participantes_TB p
+          JOIN Usuario_TB u ON p.Usuario_ID_FK = u.Usuario_ID_PK
+          WHERE p.Partida_ID_FK = @partidaId AND p.Equipo_Numero = @equipo
+        `);
 
-  const logrosQuery = await pool.request()
-    .input('userId', sql.Int, userId)
-    .input('partidaId', sql.Int, partidaId)
-    .query(`
-      SELECT l.*
-      FROM Usuario_Logros_TB ul
-      JOIN Logros_TB l ON ul.Logro_ID_FK = l.Logro_ID_PK
-      WHERE ul.Usuario_ID_FK = @userId
-        AND ul.Partida_ID_FK = @partidaId
-        AND l.Tipo IN ('grupo', 'usuario', 'especial')
-    `);
+      const resultadosQuery = await pool.request()
+        .input('partidaId', sql.Int, partidaId)
+        .input('equipo', sql.Int, equipoNumero)
+        .query(`
+          SELECT *
+          FROM Resultados_TB
+          WHERE Partida_ID_FK = @partidaId AND Equipo = @equipo
+        `);
 
-  return res.status(200).json({
-    partida,
-    equipo: {
-      numero: equipoNumero,
-      miembros: miembrosQuery.recordset,
-      resultados: resultadosQuery.recordset,
-      logros: logrosQuery.recordset
+      const logrosQuery = await pool.request()
+        .input('userId', sql.Int, userId)
+        .input('partidaId', sql.Int, partidaId)
+        .query(`
+          SELECT l.*
+          FROM Usuario_Logros_TB ul
+          JOIN Logros_TB l ON ul.Logro_ID_FK = l.Logro_ID_PK
+          WHERE ul.Usuario_ID_FK = @userId
+            AND ul.Partida_ID_FK = @partidaId
+            AND l.Tipo IN ('grupo', 'usuario', 'especial')
+        `);
+
+      console.log("✅ Resultados para estudiante listos");
+      return res.status(200).json({
+        partida,
+        equipo: {
+          numero: equipoNumero,
+          miembros: miembrosQuery.recordset,
+          resultados: resultadosQuery.recordset,
+          logros: logrosQuery.recordset
+        }
+      });
     }
-  });
-}
 
-    // 4. Si no es profesor ni estudiante válido
+    // 4. Rol no reconocido
+    console.log(`❌ Rol ${rol} no autorizado`);
     return res.status(403).json({ message: 'Rol no autorizado' });
 
   } catch (error) {
-    console.error('Error al obtener resultados:', error);
+    console.error('💥 Error al obtener resultados:', error);
     return res.status(500).json({ message: 'Error al obtener resultados' });
   }
 };
+
 
 
 
