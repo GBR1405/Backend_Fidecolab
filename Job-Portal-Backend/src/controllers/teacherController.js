@@ -521,15 +521,6 @@ function generatePassword(nombre) {
   return `${capital}${base.slice(1)}${num}${random}`;
 }
   
-  // Función para generar el PDF
-  // Generador de contraseñas fuertes
-function generatePassword(nombre) {
-  const base = nombre.trim().toLowerCase();
-  const random = Math.random().toString(36).slice(-4);
-  const capital = nombre[0].toUpperCase();
-  const num = Math.floor(100 + Math.random() * 900);
-  return `${capital}${base.slice(1)}${num}${random}`;
-}
 
 // PDF para estudiantes
 async function generatePDF(estudiantes, saltados) {
