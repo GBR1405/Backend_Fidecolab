@@ -1525,7 +1525,11 @@ socket.on('initHangmanGame', ({ partidaId, equipoNumero }) => {
     }
 
     // Determinar intentos según dificultad
-    const intentosMaximos = 6;
+    const dificultad = (currentGame.dificultad || '').toLowerCase();
+    let intentosMaximos = 6;
+    if (dificultad === 'fácil' || dificultad === 'facil') intentosMaximos = 6;
+    else if (dificultad === 'normal') intentosMaximos = 5;
+    else if (dificultad === 'difícil' || dificultad === 'dificil') intentosMaximos = 4;
 
     // Crear nuevo juego
     hangmanGames[gameId] = {
@@ -1588,11 +1592,15 @@ socket.on('guessLetter', ({ partidaId, equipoNumero, letra }) => {
     if (game.config.palabra.includes(letraNormalizada)) {
       const uniqueLetters = [...new Set(game.config.palabra.split(''))];
       const progress = Math.round((game.state.letrasAdivinadas.length / uniqueLetters.length) * 100);
-      updateTeamProgress(partidaId, equipoNumero, 'Ahorcado', progress);
+      const correctas = game.state.letrasAdivinadas.length;
+      const errores = game.state.letrasIntentadas.length - correctas;
+      updateTeamProgress(partidaId, equipoNumero, 'Ahorcado', { correctas, errores });
     } else {
       // Progreso basado en intentos restantes
       const progress = Math.round((game.state.intentosRestantes / game.config.intentosMaximos) * 100);
-      updateTeamProgress(partidaId, equipoNumero, 'Ahorcado', progress);
+      const correctas = game.state.letrasAdivinadas.length;
+      const errores = game.state.letrasIntentadas.length - correctas;
+      updateTeamProgress(partidaId, equipoNumero, 'Ahorcado', { correctas, errores });
     }
 
     // Verificar si está en la palabra
