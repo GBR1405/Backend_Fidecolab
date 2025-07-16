@@ -302,68 +302,78 @@ export const getResults = async (req, res) => {
 
     // 3. Si es estudiante
     if (rol === 'Estudiante') {
-      console.log(`🎓 Verificando participación del estudiante ${userId}`);
+  console.log(`🎓 Verificando participación del estudiante ${userId}`);
 
-      const participanteQuery = await pool.request()
-        .input('userId', sql.Int, userId)
-        .input('partidaId', sql.Int, partidaId)
-        .query(`
-          SELECT Equipo_Numero 
-          FROM Participantes_TB 
-          WHERE Usuario_ID_FK = @userId AND Partida_ID_FK = @partidaId
-        `);
+  const participanteQuery = await pool.request()
+    .input('userId', sql.Int, userId)
+    .input('partidaId', sql.Int, partidaId)
+    .query(`
+      SELECT Equipo_Numero 
+      FROM Participantes_TB 
+      WHERE Usuario_ID_FK = @userId AND Partida_ID_FK = @partidaId
+    `);
 
-      if (participanteQuery.recordset.length === 0) {
-        console.log(`❌ Estudiante ${userId} no participó en la partida ${partidaId}`);
-        return res.status(403).json({ message: 'No participaste en esta partida' });
-      }
+  if (participanteQuery.recordset.length === 0) {
+    console.log(`❌ Estudiante ${userId} no participó en la partida ${partidaId}`);
+    return res.status(403).json({ message: 'No participaste en esta partida' });
+  }
 
-      const equipoNumero = participanteQuery.recordset[0].Equipo_Numero;
-      console.log(`✅ Estudiante ${userId} participó en el equipo ${equipoNumero}`);
+  const equipoNumero = participanteQuery.recordset[0].Equipo_Numero;
+  console.log(`✅ Estudiante ${userId} participó en el equipo ${equipoNumero}`);
 
-      const miembrosQuery = await pool.request()
-        .input('partidaId', sql.Int, partidaId)
-        .input('equipo', sql.Int, equipoNumero)
-        .query(`
-          SELECT u.Usuario_ID_PK, u.Nombre, u.Apellido1, u.Apellido2
-          FROM Participantes_TB p
-          JOIN Usuario_TB u ON p.Usuario_ID_FK = u.Usuario_ID_PK
-          WHERE p.Partida_ID_FK = @partidaId AND p.Equipo_Numero = @equipo
-        `);
+  // Envolver todo en arrays y objetos como en profesor
+  // 1. Obtener miembros solo del equipo del estudiante
+  const miembrosPorEquipo = [{
+    equipo: equipoNumero,
+    miembros: (await pool.request()
+      .input('partidaId', sql.Int, partidaId)
+      .input('equipo', sql.Int, equipoNumero)
+      .query(`
+        SELECT u.Usuario_ID_PK, u.Nombre, u.Apellido1, u.Apellido2
+        FROM Participantes_TB p
+        JOIN Usuario_TB u ON p.Usuario_ID_FK = u.Usuario_ID_PK
+        WHERE p.Partida_ID_FK = @partidaId AND p.Equipo_Numero = @equipo
+      `)).recordset
+  }];
 
-      const resultadosQuery = await pool.request()
-        .input('partidaId', sql.Int, partidaId)
-        .input('equipo', sql.Int, equipoNumero)
-        .query(`
-          SELECT *
-          FROM Resultados_TB
-          WHERE Partida_ID_FK = @partidaId AND Equipo = @equipo
-        `);
+  // 2. Resultados solo del equipo del estudiante
+  const resultadosPorEquipo = [{
+    equipo: equipoNumero,
+    resultados: (await pool.request()
+      .input('partidaId', sql.Int, partidaId)
+      .input('equipo', sql.Int, equipoNumero)
+      .query(`
+        SELECT *
+        FROM Resultados_TB
+        WHERE Partida_ID_FK = @partidaId AND Equipo = @equipo
+      `)).recordset
+  }];
 
-      const logrosQuery = await pool.request()
-        .input('userId', sql.Int, userId)
-        .input('partidaId', sql.Int, partidaId)
-        .query(`
-          SELECT l.*
-          FROM Usuario_Logros_TB ul
-          JOIN Logros_TB l ON ul.Logro_ID_FK = l.Logro_ID_PK
-          WHERE ul.Usuario_ID_FK = @userId
-            AND ul.Partida_ID_FK = @partidaId
-            AND l.Tipo IN ('grupo', 'usuario', 'especial')
-        `);
+  // 3. Logros del estudiante, pero adaptado a estructura de logrosPorEquipo (obj con equipo como clave)
+  const logrosQuery = await pool.request()
+    .input('userId', sql.Int, userId)
+    .input('partidaId', sql.Int, partidaId)
+    .query(`
+      SELECT l.*
+      FROM Usuario_Logros_TB ul
+      JOIN Logros_TB l ON ul.Logro_ID_FK = l.Logro_ID_PK
+      WHERE ul.Usuario_ID_FK = @userId
+        AND ul.Partida_ID_FK = @partidaId
+        AND l.Tipo IN ('grupo', 'usuario', 'especial')
+    `);
 
-      console.log("✅ Resultados para estudiante listos");
-      return res.status(200).json({
-        partida,
-        equipo: {
-          numero: equipoNumero,
-          miembros: miembrosQuery.recordset,
-          resultados: resultadosQuery.recordset,
-          logros: logrosQuery.recordset
-        }
-      });
-    }
+  const logrosPorEquipo = {
+    [equipoNumero]: logrosQuery.recordset
+  };
 
+  console.log("✅ Resultados para estudiante listos (estructura tipo profesor)");
+  return res.status(200).json({
+    partida,
+    equipos: miembrosPorEquipo,
+    resultados: resultadosPorEquipo,
+    logros: logrosPorEquipo
+  });
+}
     // 4. Rol no reconocido
     console.log(`❌ Rol ${rol} no autorizado`);
     return res.status(403).json({ message: 'Rol no autorizado' });
