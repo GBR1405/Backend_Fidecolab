@@ -1,4 +1,5 @@
 import { poolPromise } from '../config/db.js'; // Importar la conexión
+import axios from 'axios';
 import sql from 'mssql';
 import PDFDocument from "pdfkit";
 import fs from "fs";
