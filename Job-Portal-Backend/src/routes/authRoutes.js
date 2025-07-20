@@ -15,7 +15,7 @@ router.post('/forgot-password', loginLimiter, forgotPassword);
 router.post('/reset-password', resetPassword);
 router.post('/user-edit',authMiddleware, roleMiddleware(["Estudiante", "Profesor"]), updateUser);
 router.get('/user-profile',authMiddleware, roleMiddleware(["Estudiante", "Profesor"]), getFullUserDetails);
-router.get('/user-update-password',authMiddleware, roleMiddleware(["Estudiante", "Profesor"]), updatePassword);
+router.post('/user-update-password',authMiddleware, roleMiddleware(["Estudiante", "Profesor"]), updatePassword);
 
 
 export default router;
