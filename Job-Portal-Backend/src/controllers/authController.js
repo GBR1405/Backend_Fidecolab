@@ -410,3 +410,48 @@ export const getFullUserDetails = async (req, res) => {
     return res.status(500).json({ success: false, message: "Failed to retrieve user details" });
   }
 };
+
+export const updatePassword = async (req, res) => {
+  const { currentPassword, newPassword } = req.body;
+  const userId = req.user.id;
+
+  if (!currentPassword || !newPassword) {
+    return res.status(400).json({ success: false, message: "Debes proporcionar ambas contraseñas." });
+  }
+
+  try {
+    const pool = await poolPromise;
+
+    // Obtener la contraseña actual desde la DB
+    const result = await pool.request()
+      .input("userId", sql.Int, userId)
+      .query("SELECT Contraseña FROM Usuario_TB WHERE Usuario_ID_PK = @userId");
+
+    if (result.recordset.length === 0) {
+      return res.status(404).json({ success: false, message: "Usuario no encontrado" });
+    }
+
+    const storedHashedPassword = result.recordset[0].Contraseña;
+
+    // Comparar contraseña actual
+    const isMatch = await bcrypt.compare(currentPassword, storedHashedPassword);
+    if (!isMatch) {
+      return res.status(401).json({ success: false, message: "La contraseña actual es incorrecta" });
+    }
+
+    // Hashear la nueva contraseña
+    const hashedNewPassword = await bcrypt.hash(newPassword, 10);
+
+    // Actualizar la nueva contraseña
+    await pool.request()
+      .input("userId", sql.Int, userId)
+      .input("newPassword", sql.NVarChar, hashedNewPassword)
+      .query("UPDATE Usuario_TB SET Contraseña = @newPassword WHERE Usuario_ID_PK = @userId");
+
+    return res.status(200).json({ success: true, message: "Contraseña actualizada correctamente" });
+
+  } catch (error) {
+    console.error("Error al actualizar la contraseña:", error);
+    return res.status(500).json({ success: false, message: "No se pudo actualizar la contraseña" });
+  }
+};
