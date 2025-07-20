@@ -301,61 +301,49 @@ export const resetPassword = async (req, res) => {
 
 // Función para actualizar los datos del usuario
 export const updateUser = async (req, res) => {
-  // Obtener el correo y el género desde el cuerpo de la solicitud
-  const { correo, generoId } = req.body;
+  const { generoId } = req.body;
 
-  
-
-  if (!correo) {
-    return res.status(400).json({ success: false, message: "Correo is required" });
+  // Asegurarse de que el middleware de autenticación asignó req.user
+  if (!req.user || !req.user.id) {
+    return res.status(401).json({ success: false, message: "Usuario no autenticado" });
   }
+
+  const userId = req.user.id;
 
   if (!generoId) {
-    return res.status(400).json({ success: false, message: "Genero ID is required" });
+    return res.status(400).json({ success: false, message: "Genero ID es requerido" });
   }
-
-
-  const pool = await poolPromise;
 
   try {
-    // Verificar si el usuario existe en la base de datos con el correo proporcionado
+    const pool = await poolPromise;
+
+    // Verificar si el usuario existe por ID
     const userCheck = await pool.request()
-      .input("correo", sql.VarChar, correo) // Usamos el correo para buscar al usuario
-      .query("SELECT * FROM Usuario_TB WHERE Correo = @correo");
+      .input("id", sql.Int, userId)
+      .query("SELECT * FROM Usuario_TB WHERE Usuario_ID = @id");
 
     if (userCheck.recordset.length === 0) {
-      return res.status(404).json({ success: false, message: "User not found" });
+      return res.status(404).json({ success: false, message: "Usuario no encontrado" });
     }
 
-    // Crear una lista de campos a actualizar
-    let updateFields = [];
-    if (generoId) updateFields.push("Genero_ID_FK = @generoId");
-
-    if (updateFields.length === 0) {
-      return res.status(400).json({ success: false, message: "No fields to update" });
-    }
-
-    // Consulta de actualización
-    const updateQuery = `
-      UPDATE Usuario_TB
-      SET ${updateFields.join(", ")}
-      WHERE Correo = @correo
-    `;
-
-    // Ejecutar la consulta de actualización
+    // Realizar la actualización
     await pool.request()
-      .input("correo", sql.VarChar, correo) // Actualizamos usando el correo
+      .input("id", sql.Int, userId)
       .input("generoId", sql.Int, generoId)
-      .query(updateQuery);
-      
-    // Responder con éxito
-    return res.status(200).json({ success: true, message: "User updated successfully" });
+      .query(`
+        UPDATE Usuario_TB
+        SET Genero_ID_FK = @generoId
+        WHERE Usuario_ID = @id
+      `);
+
+    return res.status(200).json({ success: true, message: "Género actualizado correctamente" });
 
   } catch (error) {
-    console.error("Error updating user:", error);
-    return res.status(500).json({ success: false, message: "Failed to update user" });
+    console.error("Error al actualizar el usuario:", error);
+    return res.status(500).json({ success: false, message: "Error interno del servidor" });
   }
 };
+
 
 
  
