@@ -333,7 +333,7 @@ export const updateUser = async (req, res) => {
       .query(`
         UPDATE Usuario_TB
         SET Genero_ID_FK = @generoId
-        WHERE Usuario_ID = @id
+        WHERE Usuario_ID_PK = @id
       `);
 
     return res.status(200).json({ success: true, message: "Género actualizado correctamente" });
