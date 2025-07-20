@@ -320,7 +320,7 @@ export const updateUser = async (req, res) => {
     // Verificar si el usuario existe por ID
     const userCheck = await pool.request()
       .input("id", sql.Int, userId)
-      .query("SELECT * FROM Usuario_TB WHERE Usuario_ID = @id");
+      .query("SELECT * FROM Usuario_TB WHERE Usuario_ID_PK = @id");
 
     if (userCheck.recordset.length === 0) {
       return res.status(404).json({ success: false, message: "Usuario no encontrado" });
