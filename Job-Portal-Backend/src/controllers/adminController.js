@@ -1458,5 +1458,61 @@ export const obtenerMetricasAdmin = async (req, res) => {
   }
 };
 
+export const obtenerUsuariosPorCursoId = async (req, res) => {
+    const { cursoId } = req.params;
+
+    try {
+        const pool = await poolPromise;
+
+        // Paso 1: Buscar todos los grupos de ese curso
+        const gruposResult = await pool.request()
+            .input("cursoId", cursoId)
+            .query(`
+                SELECT GrupoCurso_ID_PK
+                FROM GrupoCurso_TB
+                WHERE Curso_ID_FK = @cursoId
+            `);
+
+        const grupoIds = gruposResult.recordset.map(row => row.GrupoCurso_ID_PK);
+        if (grupoIds.length === 0) {
+            return res.json({ profesor: null, estudiantes: [] });
+        }
+
+        // Paso 2: Buscar profesor (Usuario con Rol_ID_FK = Rol de Profesor)
+        const profesorResult = await pool.request()
+            .query(`
+                SELECT U.Usuario_ID_PK, U.Nombre, U.Apellido1, U.Apellido2, U.Correo
+                FROM GrupoVinculado_TB GV
+                INNER JOIN Usuario_TB U ON U.Usuario_ID_PK = GV.Usuario_ID_FK
+                WHERE GV.GrupoCurso_ID_FK IN (${grupoIds.join(",")})
+                AND U.Rol_ID_FK = (SELECT Rol_ID_PK FROM Rol_TB WHERE Rol = 'Profesor')
+            `);
+
+        const profesor = profesorResult.recordset[0] || null;
+
+        // Paso 3: Buscar estudiantes
+        const estudiantesResult = await pool.request()
+            .query(`
+                SELECT U.Usuario_ID_PK, U.Nombre, U.Apellido1, U.Apellido2, U.Correo
+                FROM GrupoVinculado_TB GV
+                INNER JOIN Usuario_TB U ON U.Usuario_ID_PK = GV.Usuario_ID_FK
+                WHERE GV.GrupoCurso_ID_FK IN (${grupoIds.join(",")})
+                AND U.Rol_ID_FK = (SELECT Rol_ID_PK FROM Rol_TB WHERE Rol = 'Estudiante')
+            `);
+
+        const estudiantes = estudiantesResult.recordset;
+
+        res.json({
+            profesor,
+            estudiantes
+        });
+
+    } catch (error) {
+        console.error("Error obteniendo detalles del curso:", error);
+        res.status(500).json({ error: "Error al obtener detalles del curso." });
+    }
+};
+
+
 export { generatePDF };
 

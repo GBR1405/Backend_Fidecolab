@@ -3,7 +3,7 @@ import express from 'express';
 import {generateStudentsReport, agregarCurso, obtenerCursos, obtenerUltimoGrupoCurso, guardarGrupo, agregarProfesor,
         getAllProfessors, getAllGroups, generateProfesorReport, generatePartidaReport, generateBitacoraReport, obtenerCursosDelProfesor,
         getGruposDisponibles, asignarGrupo, desvincularGrupo, obtenerBitacoraDescargas, editarPersonalizacion, desactivarPersonalizacion,
-        activarPersonalizacion, obtenerMetricasAdmin
+        activarPersonalizacion, obtenerMetricasAdmin, obtenerUsuariosPorCursoId
 } from '../controllers/adminController.js';
 
 import { authMiddleware } from "../middleware/authMiddleware.js";
@@ -33,5 +33,6 @@ router.get('/report-teacher',authMiddleware, roleMiddleware(["Administrador"]), 
 router.get('/report-partidas',authMiddleware, roleMiddleware(["Administrador"]), generatePartidaReport);
 router.get('/report-bitacora',authMiddleware, roleMiddleware(["Administrador"]), generateBitacoraReport);
 router.get('/report-historial',authMiddleware, roleMiddleware(["Administrador"]), obtenerBitacoraDescargas);
+router.get("/detalles-curso/:cursoId",authMiddleware, roleMiddleware(["Administrador"]), obtenerUsuariosPorCursoId);
 
 export default router;
