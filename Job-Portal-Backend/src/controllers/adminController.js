@@ -1135,22 +1135,23 @@ export const agregarProfesor = async (req, res) => {
 export const desvincularGrupo = async (req, res) => {
   const { profesorId, grupoId } = req.body;
 
-  console.log(grupoId)
+  console.log("Profesor ID:", profesorId);
+  console.log("Grupo ID:", grupoId);
 
   try {
-      const pool = await poolPromise;
-      await pool.request()
-          .input('profesorId', profesorId)
-          .input('grupoId', grupoId)
-          .query(`
-              DELETE FROM GrupoVinculado_TB
-              WHERE GruposEncargados_ID_PK = @grupoId
-          `);
+    const pool = await poolPromise;
+    await pool.request()
+      .input('profesorId', profesorId)
+      .input('grupoId', grupoId)
+      .query(`
+        DELETE FROM GrupoVinculado_TB
+        WHERE Usuario_ID_FK = @profesorId AND GrupoCurso_ID_FK = @grupoId
+      `);
 
-      res.status(200).json({ message: 'Grupo desvinculado correctamente' });
+    res.status(200).json({ message: 'Grupo desvinculado correctamente' });
   } catch (error) {
-      console.error("Error desvinculando grupo:", error);
-      res.status(500).json({ error: "Error desvinculando grupo" });
+    console.error("Error desvinculando grupo:", error);
+    res.status(500).json({ error: "Error desvinculando grupo" });
   }
 };
 
