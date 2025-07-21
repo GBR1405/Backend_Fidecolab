@@ -1618,7 +1618,14 @@ socket.on('guessLetter', ({ partidaId, equipoNumero, letra }) => {
 
     // Verificar si está en la palabra
     if (game.config.palabra.includes(letraNormalizada)) {
-      game.state.letrasAdivinadas.push(letraNormalizada);
+        const ocurrencias = game.config.palabra
+          .split('')
+          .filter(l => l === letraNormalizada).length;
+
+        // Guardar cada aparición de la letra como acierto
+        for (let i = 0; i < ocurrencias; i++) {
+          game.state.letrasAdivinadas.push(letraNormalizada);
+        }
       
       // Verificar si ganó
       const palabraUnica = [...new Set(game.config.palabra.split(''))];
@@ -1626,8 +1633,16 @@ socket.on('guessLetter', ({ partidaId, equipoNumero, letra }) => {
         game.state.juegoTerminado = true;
         game.state.ganado = true;
 
-        if (!gameTeamTimestamps[partidaId]?.[equipoNumero]?.completedAt) {
-          gameTeamTimestamps[partidaId][equipoNumero].completedAt = new Date();
+        const currentIndex = global.partidasConfig?.[partidaId]?.currentIndex || 0;
+
+        if (!gameTeamTimestamps[partidaId]) gameTeamTimestamps[partidaId] = {};
+        if (!gameTeamTimestamps[partidaId][equipoNumero]) gameTeamTimestamps[partidaId][equipoNumero] = {};
+        if (!gameTeamTimestamps[partidaId][equipoNumero][currentIndex]) {
+          gameTeamTimestamps[partidaId][equipoNumero][currentIndex] = {};
+        }
+
+        if (!gameTeamTimestamps[partidaId][equipoNumero][currentIndex].completedAt) {
+          gameTeamTimestamps[partidaId][equipoNumero][currentIndex].completedAt = new Date();
         }
       }
     } else {
@@ -1638,8 +1653,16 @@ socket.on('guessLetter', ({ partidaId, equipoNumero, letra }) => {
         game.state.juegoTerminado = true;
         game.state.ganado = false;
 
-        if (!gameTeamTimestamps[partidaId]?.[equipoNumero]?.completedAt) {
-          gameTeamTimestamps[partidaId][equipoNumero].completedAt = new Date();
+        const currentIndex = global.partidasConfig?.[partidaId]?.currentIndex || 0;
+
+        if (!gameTeamTimestamps[partidaId]) gameTeamTimestamps[partidaId] = {};
+        if (!gameTeamTimestamps[partidaId][equipoNumero]) gameTeamTimestamps[partidaId][equipoNumero] = {};
+        if (!gameTeamTimestamps[partidaId][equipoNumero][currentIndex]) {
+          gameTeamTimestamps[partidaId][equipoNumero][currentIndex] = {};
+        }
+
+        if (!gameTeamTimestamps[partidaId][equipoNumero][currentIndex].completedAt) {
+          gameTeamTimestamps[partidaId][equipoNumero][currentIndex].completedAt = new Date();
         }
 
       }
