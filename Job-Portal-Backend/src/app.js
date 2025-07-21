@@ -1259,9 +1259,12 @@ socket.on('initMemoryGame', async ({ partidaId, equipoNumero }) => {
       return;
     }
 
+    const currentIndex = global.partidasConfig[partidaId]?.currentIndex || 0;
+
     if (!gameTeamTimestamps[partidaId]) gameTeamTimestamps[partidaId] = {};
-    if (!gameTeamTimestamps[partidaId][equipoNumero]) {
-      gameTeamTimestamps[partidaId][equipoNumero] = {
+    if (!gameTeamTimestamps[partidaId][equipoNumero]) gameTeamTimestamps[partidaId][equipoNumero] = {};
+    if (!gameTeamTimestamps[partidaId][equipoNumero][currentIndex]) {
+      gameTeamTimestamps[partidaId][equipoNumero][currentIndex] = {
         startedAt: new Date(),
         completedAt: null
       };
@@ -1547,9 +1550,12 @@ socket.on('initHangmanGame', ({ partidaId, equipoNumero }) => {
       }
     };
 
+    const currentIndex = global.partidasConfig[partidaId]?.currentIndex || 0;
+
     if (!gameTeamTimestamps[partidaId]) gameTeamTimestamps[partidaId] = {};
-    if (!gameTeamTimestamps[partidaId][equipoNumero]) {
-      gameTeamTimestamps[partidaId][equipoNumero] = {
+    if (!gameTeamTimestamps[partidaId][equipoNumero]) gameTeamTimestamps[partidaId][equipoNumero] = {};
+    if (!gameTeamTimestamps[partidaId][equipoNumero][currentIndex]) {
+      gameTeamTimestamps[partidaId][equipoNumero][currentIndex] = {
         startedAt: new Date(),
         completedAt: null
       };
@@ -1754,9 +1760,12 @@ socket.on('initDrawingGame', ({ partidaId, equipoNumero, userId }) => {
     };
   }
 
+  const currentIndex = global.partidasConfig[partidaId]?.currentIndex || 0;
+
   if (!gameTeamTimestamps[partidaId]) gameTeamTimestamps[partidaId] = {};
-  if (!gameTeamTimestamps[partidaId][equipoNumero]) {
-    gameTeamTimestamps[partidaId][equipoNumero] = {
+  if (!gameTeamTimestamps[partidaId][equipoNumero]) gameTeamTimestamps[partidaId][equipoNumero] = {};
+  if (!gameTeamTimestamps[partidaId][equipoNumero][currentIndex]) {
+    gameTeamTimestamps[partidaId][equipoNumero][currentIndex] = {
       startedAt: new Date(),
       completedAt: null
     };
@@ -2473,9 +2482,12 @@ socket.on('initPuzzleGame', ({ partidaId, equipoNumero, difficulty, imageUrl }) 
     // Eliminar el estado anterior si existe
     delete puzzleGames[key];
 
+    const currentIndex = global.partidasConfig[partidaId]?.currentIndex || 0;
+
     if (!gameTeamTimestamps[partidaId]) gameTeamTimestamps[partidaId] = {};
-    if (!gameTeamTimestamps[partidaId][equipoNumero]) {
-      gameTeamTimestamps[partidaId][equipoNumero] = {
+    if (!gameTeamTimestamps[partidaId][equipoNumero]) gameTeamTimestamps[partidaId][equipoNumero] = {};
+    if (!gameTeamTimestamps[partidaId][equipoNumero][currentIndex]) {
+      gameTeamTimestamps[partidaId][equipoNumero][currentIndex] = {
         startedAt: new Date(),
         completedAt: null
       };
@@ -2682,21 +2694,37 @@ async function generarResultadosJuegoActual(partidaId) {
     let comentario = '';
 
     // Tiempo restante del juego
+    const currentIndex = config.currentIndex;
     let tiempoJugado = "N/A";
-    const started = gameTeamTimestamps?.[partidaId]?.[equipoNumero]?.startedAt;
-    let ended = gameTeamTimestamps?.[partidaId]?.[equipoNumero]?.completedAt;
+
+    const timestamps = gameTeamTimestamps?.[partidaId]?.[equipoNumero]?.[currentIndex];
+
+    if (timestamps?.startedAt && timestamps?.completedAt) {
+      const diffSeconds = Math.floor((new Date(timestamps.completedAt) - new Date(timestamps.startedAt)) / 1000);
+      tiempoJugado = diffSeconds;
+}
 
     if (started && ended) {
       const diffSeconds = Math.floor((new Date(ended) - new Date(started)) / 1000);
       tiempoJugado = diffSeconds;
     }
 
-    if (!ended && tipo === 'Dibujo') {
-      ended = new Date();
-      if (gameTeamTimestamps?.[partidaId]?.[equipoNumero]) {
-        gameTeamTimestamps[partidaId][equipoNumero].completedAt = ended;
-      }
+    if (tiempoJugado === "N/A" && tipo === 'Dibujo') {
+    const now = new Date();
+    if (!gameTeamTimestamps?.[partidaId]) gameTeamTimestamps[partidaId] = {};
+    if (!gameTeamTimestamps[partidaId][equipoNumero]) gameTeamTimestamps[partidaId][equipoNumero] = {};
+    if (!gameTeamTimestamps[partidaId][equipoNumero][currentIndex]) {
+      gameTeamTimestamps[partidaId][equipoNumero][currentIndex] = {};
     }
+
+    gameTeamTimestamps[partidaId][equipoNumero][currentIndex].completedAt = now;
+
+    const started = gameTeamTimestamps[partidaId][equipoNumero][currentIndex].startedAt;
+    if (started) {
+      const diffSeconds = Math.floor((now - new Date(started)) / 1000);
+      tiempoJugado = diffSeconds;
+    }
+  }
 
     switch (tipo) {
       case 'Ahorcado': {
