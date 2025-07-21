@@ -2560,31 +2560,36 @@ socket.on('selectPuzzlePiece', ({ partidaId, equipoNumero, pieceId, userId }) =>
       // Calcular progreso
       game.state.progress = calculatePuzzleProgress(game.state.pieces);
 
-      // ⏱️ Registro de tiempo si se completa o se acaban los swaps
       const currentIndex = global.partidasConfig?.[partidaId]?.currentIndex || 0;
+
       if (game.state.progress === 100 || game.config.swapsLeft <= 0) {
         if (!gameTeamTimestamps[partidaId]) gameTeamTimestamps[partidaId] = {};
         if (!gameTeamTimestamps[partidaId][equipoNumero]) gameTeamTimestamps[partidaId][equipoNumero] = {};
         if (!gameTeamTimestamps[partidaId][equipoNumero][currentIndex]) {
           gameTeamTimestamps[partidaId][equipoNumero][currentIndex] = {};
         }
+
         if (!gameTeamTimestamps[partidaId][equipoNumero][currentIndex].completedAt) {
           gameTeamTimestamps[partidaId][equipoNumero][currentIndex].completedAt = new Date();
         }
       }
+
     }
 
     game.state.selected = []; // Limpiar selección
   }
 
-  socket.emit('puzzleUpdate', {
+  // Emitir actualización a todos del equipo
+  io.to(`team-${partidaId}-${equipoNumero}`).emit('puzzleUpdate', {
     pieces: game.state.pieces,
     selected: game.state.selected,
     swapsLeft: game.config.swapsLeft,
     progress: game.state.progress
   });
-});
 
+  // Actualizar barra de progreso general
+  updateTeamProgress(partidaId, equipoNumero, 'Rompecabezas', game.state.progress);
+});
 
 socket.on('requestPuzzleState', ({ partidaId, equipoNumero }) => {
   const key = `puzzle-${partidaId}-${equipoNumero}`;
@@ -2786,18 +2791,24 @@ async function generarResultadosJuegoActual(partidaId) {
       }
 
       case 'Rompecabezas': {
-        const key = `puzzle-${partidaId}-${equipoNumero}`;
-        const game = puzzleGames[key];
-        if (game) {
-          progreso = `${game.state.progress}%`;
-          tiempo = tiempoJugado;
+      const key = `puzzle-${partidaId}-${equipoNumero}`;
+      const game = puzzleGames[key];
+      if (game) {
+        const progress = game.state?.progress ?? game.progress ?? null;
+        if (typeof progress === 'number') {
+          progreso = `${progress}%`;
         } else {
-          progreso = "N/A";
-          tiempo = obtenerTiempoMaximoJuego(tipo, juegoActual.dificultad);
-          comentario = "Juego No Participado";
+          progreso = 'N/A';
         }
-        break;
+
+        tiempo = tiempoJugado;
+      } else {
+        progreso = "N/A";
+        tiempo = obtenerTiempoMaximoJuego(tipo, juegoActual.dificultad);
+        comentario = "Juego No Participado";
       }
+      break;
+    }
     }
 
     resultados.push({
