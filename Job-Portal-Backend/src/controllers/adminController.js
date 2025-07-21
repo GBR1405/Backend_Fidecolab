@@ -1459,14 +1459,14 @@ export const obtenerMetricasAdmin = async (req, res) => {
 };
 
 export const obtenerUsuariosPorGrupoId = async (req, res) => {
-    const { grupoCursoId } = req.params;  // ahora recibimos el grupo
+    const { cursoId } = req.params;  // Aquí el nombre es cursoId, pero representa el GrupoCurso_ID_PK
 
     try {
         const pool = await poolPromise;
 
         // Buscar profesor en ese grupo (Rol = Profesor)
         const profesorResult = await pool.request()
-            .input("grupoCursoId", grupoCursoId)
+            .input("grupoCursoId", cursoId)  // uso cursoId pero como grupoCursoId en la consulta
             .query(`
                 SELECT U.Usuario_ID_PK, U.Nombre, U.Apellido1, U.Apellido2, U.Correo
                 FROM GrupoVinculado_TB GV
@@ -1479,7 +1479,7 @@ export const obtenerUsuariosPorGrupoId = async (req, res) => {
 
         // Buscar estudiantes en ese grupo (Rol = Estudiante)
         const estudiantesResult = await pool.request()
-            .input("grupoCursoId", grupoCursoId)
+            .input("grupoCursoId", cursoId)
             .query(`
                 SELECT U.Usuario_ID_PK, U.Nombre, U.Apellido1, U.Apellido2, U.Correo
                 FROM GrupoVinculado_TB GV
@@ -1500,6 +1500,7 @@ export const obtenerUsuariosPorGrupoId = async (req, res) => {
         res.status(500).json({ error: "Error al obtener detalles del grupo." });
     }
 };
+
 
 
 
