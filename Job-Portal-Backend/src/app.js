@@ -2560,8 +2560,15 @@ socket.on('selectPuzzlePiece', ({ partidaId, equipoNumero, pieceId, userId }) =>
       // Calcular progreso
       game.state.progress = calculatePuzzleProgress(game.state.pieces);
 
+      // Obtener índice actual del juego
       const currentIndex = global.partidasConfig?.[partidaId]?.currentIndex || 0;
 
+      // ✅ Guardar progreso por índice de juego
+      if (!gameTeamProgress[partidaId]) gameTeamProgress[partidaId] = {};
+      if (!gameTeamProgress[partidaId][equipoNumero]) gameTeamProgress[partidaId][equipoNumero] = {};
+      gameTeamProgress[partidaId][equipoNumero][currentIndex] = game.state.progress;
+
+      // Si completó o se quedó sin swaps, marcar tiempo final
       if (game.state.progress === 100 || game.config.swapsLeft <= 0) {
         if (!gameTeamTimestamps[partidaId]) gameTeamTimestamps[partidaId] = {};
         if (!gameTeamTimestamps[partidaId][equipoNumero]) gameTeamTimestamps[partidaId][equipoNumero] = {};
@@ -2793,21 +2800,22 @@ async function generarResultadosJuegoActual(partidaId) {
       case 'Rompecabezas': {
       const key = `puzzle-${partidaId}-${equipoNumero}`;
       const game = puzzleGames[key];
-      if (game) {
-        const progress = game.state?.progress ?? game.progress ?? null;
-        if (typeof progress === 'number') {
-          progreso = `${progress}%`;
-        } else {
-          progreso = 'N/A';
-        }
 
+      const progress = gameTeamProgress?.[partidaId]?.[equipoNumero]?.[currentIndex];
+      if (typeof progress === 'number') {
+        progreso = `${progress}%`;
+      } else {
+        progreso = 'N/A';
+      }
+
+      if (game) {
         tiempo = tiempoJugado;
       } else {
-        progreso = "N/A";
         tiempo = obtenerTiempoMaximoJuego(tipo, juegoActual.dificultad);
         comentario = "Juego No Participado";
       }
       break;
+
     }
     }
 
