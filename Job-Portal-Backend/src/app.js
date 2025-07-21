@@ -2531,72 +2531,58 @@ socket.on('syncPuzzleGame', ({ partidaId, equipoNumero }) => {
 });
 
 socket.on('selectPuzzlePiece', ({ partidaId, equipoNumero, pieceId, userId }) => {
-  try {
-    const partidaConfig = global.partidasConfig[partidaId];
-    if (!partidaConfig) return;
+  const key = `puzzle-${partidaId}-${equipoNumero}`;
+  const game = puzzleGames[key];
+  if (!game) return;
 
-    const key = `puzzle-${partidaId}-${equipoNumero}`;
-    const game = puzzleGames[key];
-    if (!game) return;
+  const selected = game.state.selected;
 
-    const { gridSize } = game.config;
-    const currentIndex = partidaConfig.currentIndex;
+  // Desmarcar si hace clic en la misma
+  if (selected.includes(pieceId)) {
+    game.state.selected = selected.filter(id => id !== pieceId);
+    return socket.emit('puzzleUpdate', game.state);
+  }
 
-    // Selección y swap
-    if (!game.state.selectedPieces) game.state.selectedPieces = [];
-    const pieceIndex = game.state.grid.findIndex(p => p.id === pieceId);
-    if (pieceIndex === -1) return;
+  game.state.selected.push(pieceId);
 
-    game.state.selectedPieces.push(pieceIndex);
+  // Si hay 2 piezas seleccionadas, hacer swap
+  if (game.state.selected.length === 2) {
+    const [id1, id2] = game.state.selected;
+    const p1 = game.state.pieces.find(p => p.id === id1);
+    const p2 = game.state.pieces.find(p => p.id === id2);
 
-    if (game.state.selectedPieces.length === 2) {
-      const [idx1, idx2] = game.state.selectedPieces;
-      [game.state.grid[idx1], game.state.grid[idx2]] = [game.state.grid[idx2], game.state.grid[idx1]];
-      game.state.selectedPieces = [];
-
-      // Reducir intentos
-      game.state.remainingSwaps--;
+    if (p1 && p2 && game.config.swapsLeft > 0) {
+      // Intercambiar posición actual
+      [p1.currentRow, p2.currentRow] = [p2.currentRow, p1.currentRow];
+      [p1.currentCol, p2.currentCol] = [p2.currentCol, p1.currentCol];
+      game.config.swapsLeft--;
 
       // Calcular progreso
-      const correct = game.state.grid.filter((p, i) => p.originalIndex === i).length;
-      const progress = Math.round((correct / game.state.grid.length) * 100);
-      game.state.progress = progress;
+      game.state.progress = calculatePuzzleProgress(game.state.pieces);
 
-      // Verificar si terminó o perdió
-      const finished = progress === 100;
-      const noSwapsLeft = game.state.remainingSwaps <= 0;
-
-      if (finished || noSwapsLeft) {
-        // Registrar tiempo completado
+      // ⏱️ Registro de tiempo si se completa o se acaban los swaps
+      const currentIndex = global.partidasConfig?.[partidaId]?.currentIndex || 0;
+      if (game.state.progress === 100 || game.config.swapsLeft <= 0) {
         if (!gameTeamTimestamps[partidaId]) gameTeamTimestamps[partidaId] = {};
         if (!gameTeamTimestamps[partidaId][equipoNumero]) gameTeamTimestamps[partidaId][equipoNumero] = {};
         if (!gameTeamTimestamps[partidaId][equipoNumero][currentIndex]) {
           gameTeamTimestamps[partidaId][equipoNumero][currentIndex] = {};
         }
-
-        gameTeamTimestamps[partidaId][equipoNumero][currentIndex].completedAt = new Date();
+        if (!gameTeamTimestamps[partidaId][equipoNumero][currentIndex].completedAt) {
+          gameTeamTimestamps[partidaId][equipoNumero][currentIndex].completedAt = new Date();
+        }
       }
-
-      // Enviar actualización
-      io.to(`team-${partidaId}-${equipoNumero}`).emit('puzzleUpdate', {
-        pieces: game.state.grid,
-        selected: [],
-        swapsLeft: game.state.remainingSwaps,
-        progress
-      });
-    } else {
-      // Solo seleccionó una pieza
-      io.to(`team-${partidaId}-${equipoNumero}`).emit('puzzleUpdate', {
-        pieces: game.state.grid,
-        selected: game.state.selectedPieces.map(i => game.state.grid[i]),
-        swapsLeft: game.state.remainingSwaps,
-        progress: game.state.progress
-      });
     }
 
-  } catch (error) {
-    console.error('Error en puzzle:', error.message);
+    game.state.selected = []; // Limpiar selección
   }
+
+  socket.emit('puzzleUpdate', {
+    pieces: game.state.pieces,
+    selected: game.state.selected,
+    swapsLeft: game.config.swapsLeft,
+    progress: game.state.progress
+  });
 });
 
 
