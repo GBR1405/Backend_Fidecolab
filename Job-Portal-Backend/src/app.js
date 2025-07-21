@@ -2704,11 +2704,6 @@ async function generarResultadosJuegoActual(partidaId) {
       tiempoJugado = diffSeconds;
 }
 
-    if (started && ended) {
-      const diffSeconds = Math.floor((new Date(ended) - new Date(started)) / 1000);
-      tiempoJugado = diffSeconds;
-    }
-
     if (tiempoJugado === "N/A" && tipo === 'Dibujo') {
     const now = new Date();
     if (!gameTeamTimestamps?.[partidaId]) gameTeamTimestamps[partidaId] = {};
