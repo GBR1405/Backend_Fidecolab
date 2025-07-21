@@ -137,7 +137,7 @@ const gameResults = {}; // {partidaId: {ordenJuego: {equipoNumero: result}}}
 const drawingStates = {};
 const tintaStates = {};
 
-const gameTeamTimestamps = {};
+const gameTeamTimestamps = {}; // { partidaId: { equipoNumero: { gameIndex: { startedAt, completedAt } } } }
 const liveDrawings = new Map();
 const professorDrawings = new Map();
 
@@ -1259,11 +1259,14 @@ socket.on('initMemoryGame', async ({ partidaId, equipoNumero }) => {
       return;
     }
 
+    // Inicializar estructura de timestamps para este juego específico
     if (!gameTeamTimestamps[partidaId]) gameTeamTimestamps[partidaId] = {};
-    if (!gameTeamTimestamps[partidaId][equipoNumero]) {
-      gameTeamTimestamps[partidaId][equipoNumero] = {
+    if (!gameTeamTimestamps[partidaId][equipoNumero]) gameTeamTimestamps[partidaId][equipoNumero] = {};
+    if (!gameTeamTimestamps[partidaId][equipoNumero][partidaConfig.currentIndex]) {
+      gameTeamTimestamps[partidaId][equipoNumero][partidaConfig.currentIndex] = {
         startedAt: new Date(),
-        completedAt: null
+        completedAt: null,
+        gameType: 'Memoria'
       };
     }
 
@@ -1547,11 +1550,14 @@ socket.on('initHangmanGame', ({ partidaId, equipoNumero }) => {
       }
     };
 
+    // Inicializar estructura de timestamps para este juego específico
     if (!gameTeamTimestamps[partidaId]) gameTeamTimestamps[partidaId] = {};
-    if (!gameTeamTimestamps[partidaId][equipoNumero]) {
-      gameTeamTimestamps[partidaId][equipoNumero] = {
+    if (!gameTeamTimestamps[partidaId][equipoNumero]) gameTeamTimestamps[partidaId][equipoNumero] = {};
+    if (!gameTeamTimestamps[partidaId][equipoNumero][config.currentIndex]) {
+      gameTeamTimestamps[partidaId][equipoNumero][config.currentIndex] = {
         startedAt: new Date(),
-        completedAt: null
+        completedAt: null,
+        gameType: 'Ahorcado'
       };
     }
 
@@ -1755,12 +1761,10 @@ socket.on('initDrawingGame', ({ partidaId, equipoNumero, userId }) => {
   }
 
   if (!gameTeamTimestamps[partidaId]) gameTeamTimestamps[partidaId] = {};
-  if (!gameTeamTimestamps[partidaId][equipoNumero]) {
-    gameTeamTimestamps[partidaId][equipoNumero] = {
-      startedAt: new Date(),
-      completedAt: null
-    };
-  }
+  if (!gameTeamTimestamps[partidaId][equipoNumero]) gameTeamTimestamps[partidaId][equipoNumero] = {
+    startedAt: new Date(),
+    completedAt: null
+  };
 
   // Inicializar tinta si no existe
   if (drawingGames[gameId].tintaStates[userId] === undefined) {
@@ -2474,12 +2478,10 @@ socket.on('initPuzzleGame', ({ partidaId, equipoNumero, difficulty, imageUrl }) 
     delete puzzleGames[key];
 
     if (!gameTeamTimestamps[partidaId]) gameTeamTimestamps[partidaId] = {};
-    if (!gameTeamTimestamps[partidaId][equipoNumero]) {
-      gameTeamTimestamps[partidaId][equipoNumero] = {
-        startedAt: new Date(),
-        completedAt: null
-      };
-    }
+    if (!gameTeamTimestamps[partidaId][equipoNumero]) gameTeamTimestamps[partidaId][equipoNumero] = {
+      startedAt: new Date(),
+      completedAt: null
+    };
 
     // Generar piezas con el tamaño correcto
     const seed = `${partidaId}-${equipoNumero}-${Date.now()}`; // Añadimos timestamp para mayor unicidad
@@ -2663,6 +2665,7 @@ async function generarResultadosJuegoActual(partidaId) {
   const tipo = juegoActual.tipo;
   const orden = juegoActual.Orden;
   const tema = juegoActual.tema || 'N/A';
+  const currentIndex = config.currentIndex;
 
   const pool = await poolPromise;
   const equiposQuery = await pool.request()
@@ -2681,20 +2684,20 @@ async function generarResultadosJuegoActual(partidaId) {
     let progreso = '';
     let comentario = '';
 
-    // Tiempo restante del juego
-    let tiempoJugado = "N/A";
-    const started = gameTeamTimestamps?.[partidaId]?.[equipoNumero]?.startedAt;
-    let ended = gameTeamTimestamps?.[partidaId]?.[equipoNumero]?.completedAt;
+    // Obtener timestamps específicos para este juego
+    const gameTimestamps = gameTeamTimestamps?.[partidaId]?.[equipoNumero]?.[currentIndex];
+    const started = gameTimestamps?.startedAt;
+    let ended = gameTimestamps?.completedAt;
 
     if (started && ended) {
       const diffSeconds = Math.floor((new Date(ended) - new Date(started)) / 1000);
-      tiempoJugado = diffSeconds;
+      tiempo = diffSeconds;
     }
 
     if (!ended && tipo === 'Dibujo') {
       ended = new Date();
-      if (gameTeamTimestamps?.[partidaId]?.[equipoNumero]) {
-        gameTeamTimestamps[partidaId][equipoNumero].completedAt = ended;
+      if (gameTeamTimestamps?.[partidaId]?.[equipoNumero]?.[currentIndex]) {
+        gameTeamTimestamps[partidaId][equipoNumero][currentIndex].completedAt = ended;
       }
     }
 
