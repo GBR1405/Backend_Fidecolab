@@ -130,6 +130,7 @@ const drawingDemonstration = {};
 const puzzleUpdateThrottle = {};
 
 const teamProgress = {};
+const gameTeamProgress = {};
 
 const gameProgress = {}; // {partidaId: {equipoNumero: {juegoType: progress}}}
 const gameResults = {}; // {partidaId: {ordenJuego: {equipoNumero: result}}}
