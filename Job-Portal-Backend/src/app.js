@@ -1369,17 +1369,23 @@ socket.on('flipMemoryCard', ({ partidaId, equipoNumero, cardId }) => {
           });
 
           if (game.state.matchedPairs === game.config.pairsCount) {
-            game.state.gameCompleted = true;
+          game.state.gameCompleted = true;
 
-            if (gameTeamTimestamps?.[partidaId]?.[equipoNumero]) {
-              gameTeamTimestamps[partidaId][equipoNumero].completedAt = new Date();
-            }
+          const currentIndex = partidaConfig.currentIndex;
 
-            io.to(`team-${partidaId}-${equipoNumero}`).emit('memoryGameState', {
-              ...game,
-              action: 'complete'
-            });
+          if (!gameTeamTimestamps[partidaId]) gameTeamTimestamps[partidaId] = {};
+          if (!gameTeamTimestamps[partidaId][equipoNumero]) gameTeamTimestamps[partidaId][equipoNumero] = {};
+          if (!gameTeamTimestamps[partidaId][equipoNumero][currentIndex]) {
+            gameTeamTimestamps[partidaId][equipoNumero][currentIndex] = {};
           }
+
+          gameTeamTimestamps[partidaId][equipoNumero][currentIndex].completedAt = new Date();
+
+          io.to(`team-${partidaId}-${equipoNumero}`).emit('memoryGameState', {
+            ...game,
+            action: 'complete'
+          });
+        }
         } else {
           // No hay match - voltear de nuevo
           firstCard.flipped = false;
@@ -2525,55 +2531,74 @@ socket.on('syncPuzzleGame', ({ partidaId, equipoNumero }) => {
 });
 
 socket.on('selectPuzzlePiece', ({ partidaId, equipoNumero, pieceId, userId }) => {
-  const key = `puzzle-${partidaId}-${equipoNumero}`;
-  const game = puzzleGames[key];
-  if (!game) return;
+  try {
+    const partidaConfig = global.partidasConfig[partidaId];
+    if (!partidaConfig) return;
 
-  const selected = game.state.selected;
+    const key = `puzzle-${partidaId}-${equipoNumero}`;
+    const game = puzzleGames[key];
+    if (!game) return;
 
-  // Desmarcar si hace clic en la misma
-  if (selected.includes(pieceId)) {
-    game.state.selected = selected.filter(id => id !== pieceId);
-    return socket.emit('puzzleUpdate', game.state);
-  }
+    const { gridSize } = game.config;
+    const currentIndex = partidaConfig.currentIndex;
 
-  game.state.selected.push(pieceId);
+    // Selección y swap
+    if (!game.state.selectedPieces) game.state.selectedPieces = [];
+    const pieceIndex = game.state.grid.findIndex(p => p.id === pieceId);
+    if (pieceIndex === -1) return;
 
-  // Si hay 2 piezas seleccionadas, hacer swap
-  if (game.state.selected.length === 2) {
-    const [id1, id2] = game.state.selected;
-    const p1 = game.state.pieces.find(p => p.id === id1);
-    const p2 = game.state.pieces.find(p => p.id === id2);
+    game.state.selectedPieces.push(pieceIndex);
 
-    if (p1 && p2 && game.config.swapsLeft > 0) {
-      // Intercambiar posición actual
-      [p1.currentRow, p2.currentRow] = [p2.currentRow, p1.currentRow];
-      [p1.currentCol, p2.currentCol] = [p2.currentCol, p1.currentCol];
-      game.config.swapsLeft--;
+    if (game.state.selectedPieces.length === 2) {
+      const [idx1, idx2] = game.state.selectedPieces;
+      [game.state.grid[idx1], game.state.grid[idx2]] = [game.state.grid[idx2], game.state.grid[idx1]];
+      game.state.selectedPieces = [];
+
+      // Reducir intentos
+      game.state.remainingSwaps--;
 
       // Calcular progreso
-      game.state.progress = calculatePuzzleProgress(game.state.pieces);
+      const correct = game.state.grid.filter((p, i) => p.originalIndex === i).length;
+      const progress = Math.round((correct / game.state.grid.length) * 100);
+      game.state.progress = progress;
 
-      if (game.state.progress === 100 && !gameTeamTimestamps[partidaId]?.[equipoNumero]?.completedAt) {
-        gameTeamTimestamps[partidaId][equipoNumero].completedAt = new Date();
+      // Verificar si terminó o perdió
+      const finished = progress === 100;
+      const noSwapsLeft = game.state.remainingSwaps <= 0;
+
+      if (finished || noSwapsLeft) {
+        // Registrar tiempo completado
+        if (!gameTeamTimestamps[partidaId]) gameTeamTimestamps[partidaId] = {};
+        if (!gameTeamTimestamps[partidaId][equipoNumero]) gameTeamTimestamps[partidaId][equipoNumero] = {};
+        if (!gameTeamTimestamps[partidaId][equipoNumero][currentIndex]) {
+          gameTeamTimestamps[partidaId][equipoNumero][currentIndex] = {};
+        }
+
+        gameTeamTimestamps[partidaId][equipoNumero][currentIndex].completedAt = new Date();
       }
 
+      // Enviar actualización
+      io.to(`team-${partidaId}-${equipoNumero}`).emit('puzzleUpdate', {
+        pieces: game.state.grid,
+        selected: [],
+        swapsLeft: game.state.remainingSwaps,
+        progress
+      });
+    } else {
+      // Solo seleccionó una pieza
+      io.to(`team-${partidaId}-${equipoNumero}`).emit('puzzleUpdate', {
+        pieces: game.state.grid,
+        selected: game.state.selectedPieces.map(i => game.state.grid[i]),
+        swapsLeft: game.state.remainingSwaps,
+        progress: game.state.progress
+      });
     }
 
-    game.state.selected = []; // Limpiar selección
+  } catch (error) {
+    console.error('Error en puzzle:', error.message);
   }
-
-  // Emitir actualización a todos del equipo
-  io.to(`team-${partidaId}-${equipoNumero}`).emit('puzzleUpdate', {
-    pieces: game.state.pieces,
-    selected: game.state.selected,
-    swapsLeft: game.config.swapsLeft,
-    progress: game.state.progress
-  });
-
-  // Actualizar barra de progreso general
-  updateTeamProgress(partidaId, equipoNumero, 'Rompecabezas', game.state.progress);
 });
+
 
 socket.on('requestPuzzleState', ({ partidaId, equipoNumero }) => {
   const key = `puzzle-${partidaId}-${equipoNumero}`;
