@@ -1207,7 +1207,7 @@ export const obtenerCursosDelProfesor = async (req, res) => {
       // Consulta SQL para obtener los cursos del profesor
       const query = `
           SELECT 
-              GruposEncargados_ID_PK AS id, 
+              GC.GrupoCurso_ID_PK AS id, 
               CC.Nombre_Curso AS nombre, 
               CC.Codigo_Curso AS codigo,
               GC.Codigo_Grupo AS grupo
