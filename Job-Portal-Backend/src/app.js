@@ -148,7 +148,7 @@ const puzzleSelections = {};
 const lockedPieces = {};
 const drawingDemoState = {};
 
-const partidas = {};
+
 
 const VOTING_TIME = 5000;
 
@@ -2203,28 +2203,46 @@ socket.on('getAllDrawingsForProfessor', (partidaId, callback) => {
 });
 
 // 2. Evento para iniciar demostración - Versión mejorada
-socket.on('startDrawingDemo', (partidaId, callback) => {
-  const equipos = partidas[partidaId]?.equipos || [];
+socket.on('startDrawingDemo', async (partidaId, callback) => {
+  try {
+    const pool = await poolPromise;
+    const query = `
+      SELECT DISTINCT Equipo_Numero
+      FROM Participantes_TB
+      WHERE Partida_ID_FK = @partidaId;
+    `;
+    const result = await pool.request()
+      .input('partidaId', sql.Int, partidaId)
+      .query(query);
 
-  if (!equipos.length) {
-    if (callback) callback({ error: 'No hay equipos en esta partida' });
-    return;
+    const equipos = result.recordset.map(r => r.Equipo_Numero).sort((a, b) => a - b);
+
+    if (!equipos.length) {
+      if (callback) callback({ error: 'No hay equipos en esta partida' });
+      return;
+    }
+
+    const primerEquipo = equipos[0];
+
+    // Guardar estado global
+    drawingDemoState[partidaId] = {
+      active: true,
+      currentTeam: primerEquipo,
+    };
+
+    // Enviar evento a todos los de la partida
+    io.to(`partida_${partidaId}`).emit('drawingDemoStarted', {
+      currentTeam: primerEquipo,
+    });
+
+    if (callback) callback({ success: true });
+
+  } catch (error) {
+    console.error('Error al iniciar modo demostración:', error);
+    if (callback) callback({ error: 'Error al iniciar modo demostración' });
   }
-
-  const equiposOrdenados = [...equipos].sort((a, b) => a - b);
-  const primerEquipo = equiposOrdenados[0];
-
-  drawingDemoState[partidaId] = {
-    active: true,
-    currentTeam: primerEquipo,
-  };
-
-  io.to(`partida_${partidaId}`).emit('drawingDemoStarted', {
-    currentTeam: primerEquipo,
-  });
-
-  if (callback) callback({ success: true });
 });
+
 
 
 socket.on('changeDrawingDemoTeam', ({ partidaId, equipoNumero }) => {
