@@ -2238,13 +2238,10 @@ socket.on('startDrawingDemo', async (partidaId, callback = () => {}) => {
 });
 
 socket.on('changeDrawingDemoTeam', ({ partidaId, equipoNumero }) => {
-  const demo = drawingDemonstrations[partidaId];
-  if (!demo || !demo.active) return;
+  if (!drawingDemoState[partidaId]) return;
 
-  // Actualizar equipo actual
-  demo.currentTeam = equipoNumero;
+  drawingDemoState[partidaId].currentTeam = equipoNumero;
 
-  // Notificar a todos
   io.to(`partida_${partidaId}`).emit('drawingDemoTeamChanged', {
     currentTeam: equipoNumero
   });
