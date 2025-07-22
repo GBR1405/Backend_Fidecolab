@@ -2362,11 +2362,12 @@ socket.on('changeDemoTeam', (partidaId, newTeam, callback) => {
 });
 
 // Evento para finalizar demo
-socket.on('endDrawingDemo', (partidaId) => {
-  if (drawingDemonstrations[partidaId]) {
-    drawingDemonstrations[partidaId].active = false;
-    io.to(`partida_${partidaId}`).emit('drawingDemoEnded');
-  }
+socket.on('endDrawingDemo', (partidaId, callback) => {
+  delete drawingDemoState[partidaId];
+
+  io.to(`partida_${partidaId}`).emit('drawingDemoEnded');
+
+  if (callback) callback({ success: true });
 });
 
 
