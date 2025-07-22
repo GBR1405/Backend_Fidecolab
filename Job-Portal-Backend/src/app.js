@@ -2200,7 +2200,7 @@ socket.on('getAllDrawingsForProfessor', (partidaId, callback) => {
 });
 
 // 2. Evento para iniciar demostración - Versión mejorada
-socket.on('startDrawingDemo', (partidaId, callback) => {
+socket.on('startDrawingDemo', async (partidaId, callback = () => {}) => {
   try {
     // Verificar si ya hay demo activa
     if (drawingDemonstrations[partidaId]?.active) {
