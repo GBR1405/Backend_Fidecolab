@@ -628,5 +628,106 @@ async function generatePDF(estudiantes, saltados) {
   });
 }
 
+// Desvincular un estudiante específico
+export const desvincularEstudiante = async (req, res) => {
+    try {
+        const { estudianteId } = req.body;
+        const profesorId = req.user.id;
+
+        const pool = await poolPromise;
+
+        // Verificar que el estudiante está vinculado a un grupo del profesor
+        const verificarVinculo = await pool.request()
+            .input('estudianteId', sql.Int, estudianteId)
+            .input('profesorId', sql.Int, profesorId)
+            .query(`
+                DELETE gv
+                FROM GrupoVinculado_TB gv
+                INNER JOIN GrupoVinculado_TB gv2 
+                    ON gv.GrupoCurso_ID_FK = gv2.GrupoCurso_ID_FK
+                WHERE gv.Usuario_ID_FK = @estudianteId
+                AND gv2.Usuario_ID_FK = @profesorId
+            `);
+
+        if (verificarVinculo.rowsAffected[0] === 0) {
+            return res.status(404).json({ 
+                success: false, 
+                mensaje: "No se encontró el estudiante vinculado a tus grupos" 
+            });
+        }
+
+        return res.json({ 
+            success: true, 
+            mensaje: "Estudiante desvinculado correctamente" 
+        });
+
+    } catch (error) {
+        console.error("Error al desvincular estudiante:", error);
+        return res.status(500).json({ 
+            success: false, 
+            mensaje: "Error al desvincular estudiante" 
+        });
+    }
+};
+
+// Desvincular todos los estudiantes de un curso
+export const desvincularTodosEstudiantes = async (req, res) => {
+    try {
+        const { grupoId } = req.body;
+        const profesorId = req.user.id;
+
+        const pool = await poolPromise;
+
+        // Verificar que el profesor tiene acceso a este grupo
+        const verificarGrupo = await pool.request()
+            .input('grupoId', sql.Int, grupoId)
+            .input('profesorId', sql.Int, profesorId)
+            .query(`
+                SELECT GrupoCurso_ID_FK 
+                FROM GrupoVinculado_TB 
+                WHERE GruposEncargados_ID_PK = @grupoId
+                AND Usuario_ID_FK = @profesorId
+            `);
+
+        if (verificarGrupo.recordset.length === 0) {
+            return res.status(403).json({ 
+                success: false, 
+                mensaje: "No tienes permiso para este grupo" 
+            });
+        }
+
+        const grupoCursoId = verificarGrupo.recordset[0].GrupoCurso_ID_FK;
+
+        // Obtener ID del rol Estudiante
+        const rolResult = await pool.request()
+            .query(`SELECT Rol_ID_PK FROM Rol_TB WHERE Rol = 'Estudiante'`);
+        const rolId = rolResult.recordset[0].Rol_ID_PK;
+
+        // Eliminar todos los estudiantes vinculados a este grupo
+        const resultado = await pool.request()
+            .input('grupoCursoId', sql.Int, grupoCursoId)
+            .input('rolId', sql.Int, rolId)
+            .query(`
+                DELETE gv
+                FROM GrupoVinculado_TB gv
+                INNER JOIN Usuario_TB u ON gv.Usuario_ID_FK = u.Usuario_ID_PK
+                WHERE gv.GrupoCurso_ID_FK = @grupoCursoId
+                AND u.Rol_ID_FK = @rolId
+            `);
+
+        return res.json({ 
+            success: true, 
+            mensaje: `Se desvincularon ${resultado.rowsAffected[0]} estudiantes del grupo` 
+        });
+
+    } catch (error) {
+        console.error("Error al desvincular estudiantes:", error);
+        return res.status(500).json({ 
+            success: false, 
+            mensaje: "Error al desvincular estudiantes" 
+        });
+    }
+};
+
   
   export { generatePDF };
