@@ -142,6 +142,9 @@ const gameTeamTimestamps = {};
 const liveDrawings = new Map();
 const professorDrawings = new Map();
 
+const puzzleSelections = {}; 
+const lockedPieces = {};
+
 const VOTING_TIME = 5000;
 
 const PUZZLE_CONFIG = {
@@ -2555,72 +2558,94 @@ socket.on('syncPuzzleGame', ({ partidaId, equipoNumero }) => {
 });
 
 socket.on('selectPuzzlePiece', ({ partidaId, equipoNumero, pieceId, userId }) => {
-  const key = `puzzle-${partidaId}-${equipoNumero}`;
-  const game = puzzleGames[key];
-  if (!game) return;
+  const key = `${partidaId}-${equipoNumero}`;
+  const gameId = `puzzle-${partidaId}-${equipoNumero}`;
+  const game = puzzleGames[gameId];
+  if (!game || !game.state || !game.state.pieces) return;
 
-  const selected = game.state.selected;
+  if (!puzzleSelections[key]) puzzleSelections[key] = {};
+  if (!lockedPieces[key]) lockedPieces[key] = new Set();
 
-  // Desmarcar si hace clic en la misma
-  if (selected.includes(pieceId)) {
-    game.state.selected = selected.filter(id => id !== pieceId);
-    return socket.emit('puzzleUpdate', game.state);
+  const userSelection = puzzleSelections[key][userId] || [];
+
+  // ⚠️ Ya no quedan swaps disponibles
+  if (game.config.swapsLeft <= 0) {
+    return socket.emit('noSwapsLeft');
   }
 
-  game.state.selected.push(pieceId);
-
-  // Si hay 2 piezas seleccionadas, hacer swap
-  if (game.state.selected.length === 2) {
-    const [id1, id2] = game.state.selected;
-    const p1 = game.state.pieces.find(p => p.id === id1);
-    const p2 = game.state.pieces.find(p => p.id === id2);
-
-    if (p1 && p2 && game.config.swapsLeft > 0) {
-      // Intercambiar posición actual
-      [p1.currentRow, p2.currentRow] = [p2.currentRow, p1.currentRow];
-      [p1.currentCol, p2.currentCol] = [p2.currentCol, p1.currentCol];
-      game.config.swapsLeft--;
-
-      // Calcular progreso
-      game.state.progress = calculatePuzzleProgress(game.state.pieces);
-
-      // Obtener índice actual del juego
-      const currentIndex = global.partidasConfig?.[partidaId]?.currentIndex || 0;
-
-      // ✅ Guardar progreso por índice de juego
-      if (!gameTeamProgress[partidaId]) gameTeamProgress[partidaId] = {};
-      if (!gameTeamProgress[partidaId][equipoNumero]) gameTeamProgress[partidaId][equipoNumero] = {};
-      gameTeamProgress[partidaId][equipoNumero][currentIndex] = game.state.progress;
-
-      // Si completó o se quedó sin swaps, marcar tiempo final
-      if (game.state.progress === 100 || game.config.swapsLeft <= 0) {
-        if (!gameTeamTimestamps[partidaId]) gameTeamTimestamps[partidaId] = {};
-        if (!gameTeamTimestamps[partidaId][equipoNumero]) gameTeamTimestamps[partidaId][equipoNumero] = {};
-        if (!gameTeamTimestamps[partidaId][equipoNumero][currentIndex]) {
-          gameTeamTimestamps[partidaId][equipoNumero][currentIndex] = {};
-        }
-
-        if (!gameTeamTimestamps[partidaId][equipoNumero][currentIndex].completedAt) {
-          gameTeamTimestamps[partidaId][equipoNumero][currentIndex].completedAt = new Date();
-        }
-      }
-
-    }
-
-    game.state.selected = []; // Limpiar selección
+  // ⚠️ Pieza bloqueada por otro usuario
+  if (lockedPieces[key].has(pieceId) && !userSelection.includes(pieceId)) {
+    return socket.emit('pieceBlocked', pieceId);
   }
 
-  // Emitir actualización a todos del equipo
-  io.to(`team-${partidaId}-${equipoNumero}`).emit('puzzleUpdate', {
-    pieces: game.state.pieces,
-    selected: game.state.selected,
-    swapsLeft: game.config.swapsLeft,
-    progress: game.state.progress
+  // 🔁 Deselección si ya está seleccionada
+  if (userSelection.includes(pieceId)) {
+    puzzleSelections[key][userId] = userSelection.filter(p => p !== pieceId);
+    lockedPieces[key].delete(pieceId);
+  } else {
+    if (userSelection.length >= 2) return; // ya seleccionó 2
+    puzzleSelections[key][userId] = [...userSelection, pieceId];
+    lockedPieces[key].add(pieceId);
+  }
+
+  // 🔄 Emitir selección actualizada
+  io.to(`team-${partidaId}-${equipoNumero}`).emit('updateSelections', {
+    userId,
+    selected: puzzleSelections[key][userId]
   });
 
-  // Actualizar barra de progreso general
-  updateTeamProgress(partidaId, equipoNumero, 'Rompecabezas', game.state.progress);
+  // ✅ Hacer swap si hay dos piezas seleccionadas
+  if (puzzleSelections[key][userId].length === 2) {
+    const [id1, id2] = puzzleSelections[key][userId];
+    const p1 = game.state.pieces.find(p => p.id === id1);
+    const p2 = game.state.pieces.find(p => p.id === id2);
+    if (!p1 || !p2) return;
+
+    // 🔄 Swap
+    [p1.currentRow, p2.currentRow] = [p2.currentRow, p1.currentRow];
+    [p1.currentCol, p2.currentCol] = [p2.currentCol, p1.currentCol];
+
+    // ⬇️ Disminuir los swaps disponibles
+    game.config.swapsLeft = Math.max(0, game.config.swapsLeft - 1);
+
+    // 🧠 Calcular progreso
+    game.state.progress = calculatePuzzleProgress(game.state.pieces);
+
+    // 💾 Guardar progreso por índice
+    const currentIndex = global.partidasConfig?.[partidaId]?.currentIndex || 0;
+    if (!gameTeamProgress[partidaId]) gameTeamProgress[partidaId] = {};
+    if (!gameTeamProgress[partidaId][equipoNumero]) gameTeamProgress[partidaId][equipoNumero] = {};
+    gameTeamProgress[partidaId][equipoNumero][currentIndex] = game.state.progress;
+
+    // ⏱️ Guardar hora si terminó
+    if (game.state.progress === 100 || game.config.swapsLeft <= 0) {
+      if (!gameTeamTimestamps[partidaId]) gameTeamTimestamps[partidaId] = {};
+      if (!gameTeamTimestamps[partidaId][equipoNumero]) gameTeamTimestamps[partidaId][equipoNumero] = {};
+      if (!gameTeamTimestamps[partidaId][equipoNumero][currentIndex]) {
+        gameTeamTimestamps[partidaId][equipoNumero][currentIndex] = {};
+      }
+
+      if (!gameTeamTimestamps[partidaId][equipoNumero][currentIndex].completedAt) {
+        gameTeamTimestamps[partidaId][equipoNumero][currentIndex].completedAt = new Date();
+      }
+    }
+
+    // 📤 Emitir nuevo estado a todo el equipo
+    io.to(`team-${partidaId}-${equipoNumero}`).emit('puzzleUpdate', {
+      pieces: game.state.pieces,
+      selected: [],
+      swapsLeft: game.config.swapsLeft,
+      progress: game.state.progress
+    });
+
+    // 🔓 Limpiar selección/bloqueo
+    puzzleSelections[key][userId] = [];
+    lockedPieces[key].delete(id1);
+    lockedPieces[key].delete(id2);
+  }
 });
+
+
 
 socket.on('requestPuzzleState', ({ partidaId, equipoNumero }) => {
   const key = `puzzle-${partidaId}-${equipoNumero}`;
