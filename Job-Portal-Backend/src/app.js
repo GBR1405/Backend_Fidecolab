@@ -146,6 +146,7 @@ const professorDrawings = new Map();
 
 const puzzleSelections = {}; 
 const lockedPieces = {};
+const drawingDemoState = {};
 
 const VOTING_TIME = 5000;
 
@@ -2200,42 +2201,29 @@ socket.on('getAllDrawingsForProfessor', (partidaId, callback) => {
 });
 
 // 2. Evento para iniciar demostración - Versión mejorada
-socket.on('startDrawingDemo', async (partidaId, callback = () => {}) => {
-  try {
-    // Verificar si ya hay demo activa
-    if (drawingDemonstrations[partidaId]?.active) {
-      return callback({ error: 'Ya hay una demostración activa' });
-    }
+socket.on('startDrawingDemo', (partidaId, callback) => {
+  const equipos = partidas[partidaId]?.equipos || [];
 
-    // Obtener lista de equipos
-    const equipos = Array.from(partidaRooms.get(partidaId) || []);
-    if (equipos.length === 0) {
-      return callback({ error: 'No hay equipos disponibles' });
-    }
-
-    // Iniciar demo
-    drawingDemonstrations[partidaId] = {
-      active: true,
-      currentTeam: equipos[0],
-      teams: equipos,
-      votes: {}
-    };
-
-    userVotes[partidaId] = {};
-
-    // Notificar a todos
-    io.to(`partida_${partidaId}`).emit('drawingDemoStarted', {
-      currentTeam: equipos[0],
-      totalTeams: equipos.length,
-      teams: equipos
-    });
-
-    callback({ success: true });
-  } catch (error) {
-    console.error('Error al iniciar demo:', error);
-    callback({ error: 'Error al iniciar demostración' });
+  if (!equipos.length) {
+    if (callback) callback({ error: 'No hay equipos en esta partida' });
+    return;
   }
+
+  const equiposOrdenados = [...equipos].sort((a, b) => a - b);
+  const primerEquipo = equiposOrdenados[0];
+
+  drawingDemoState[partidaId] = {
+    active: true,
+    currentTeam: primerEquipo,
+  };
+
+  io.to(`partida_${partidaId}`).emit('drawingDemoStarted', {
+    currentTeam: primerEquipo,
+  });
+
+  if (callback) callback({ success: true });
 });
+
 
 socket.on('changeDrawingDemoTeam', ({ partidaId, equipoNumero }) => {
   if (!drawingDemoState[partidaId]) return;
@@ -2243,8 +2231,18 @@ socket.on('changeDrawingDemoTeam', ({ partidaId, equipoNumero }) => {
   drawingDemoState[partidaId].currentTeam = equipoNumero;
 
   io.to(`partida_${partidaId}`).emit('drawingDemoTeamChanged', {
-    currentTeam: equipoNumero
+    currentTeam: equipoNumero,
   });
+});
+
+// Verificar si la demostración está activa
+socket.on('checkDrawingDemo', (partidaId, callback) => {
+  const state = drawingDemoState[partidaId];
+  if (state && state.active) {
+    callback({ active: true, currentTeam: state.currentTeam });
+  } else {
+    callback({ active: false });
+  }
 });
 
 socket.on('voteForDrawing', ({ partidaId, equipoNumero, userId }, callback) => {
@@ -2351,16 +2349,7 @@ socket.on('endDrawingDemo', (partidaId) => {
   }
 });
 
-socket.on('checkDrawingDemo', (partidaId, callback) => {
-  const demo = drawingDemonstrations[partidaId];
-  callback({
-    active: demo?.active || false,
-    currentTeam: demo?.currentTeam || 1,
-    totalTeams: demo?.teams?.length || 0,
-    teams: demo?.teams || [],
-    votes: demo?.votes || {}
-  });
-});
+
 
 // Al conectar/reconectar
 socket.on('connection', (socket) => {
