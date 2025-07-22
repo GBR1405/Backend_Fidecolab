@@ -148,6 +148,8 @@ const puzzleSelections = {};
 const lockedPieces = {};
 const drawingDemoState = {};
 
+const partidas = {};
+
 const VOTING_TIME = 5000;
 
 const PUZZLE_CONFIG = {
