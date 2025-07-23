@@ -2307,17 +2307,6 @@ socket.on('voteForDrawing', ({ partidaId, equipoNumero, userId }, callback) => {
 
 socket.on('getDrawingVotes', (partidaId, callback) => {
   const votes = drawingVotes[partidaId] || {};
-  
-  // Inicializar votos para todos los equipos si no existen
-  const partidaData = partidaTeams.get(parseInt(partidaId));
-  if (partidaData) {
-    Object.keys(partidaData).forEach(equipo => {
-      if (!votes[equipo]) {
-        votes[equipo] = 0;
-      }
-    });
-  }
-  
   callback({
     votes,
     topTeams: getTopTeams(votes)
