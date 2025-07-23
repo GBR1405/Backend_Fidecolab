@@ -136,6 +136,7 @@ const gameProgress = {}; // {partidaId: {equipoNumero: {juegoType: progress}}}
 const gameResults = {}; // {partidaId: {ordenJuego: {equipoNumero: result}}}
 
 const userVotes = {};
+const drawingVotes = {};
 
 const drawingStates = {};
 const tintaStates = {};
@@ -2266,29 +2267,80 @@ socket.on('checkDrawingDemo', (partidaId, callback) => {
 });
 
 socket.on('voteForDrawing', ({ partidaId, equipoNumero, userId }, callback) => {
-  const demo = drawingDemonstrations[partidaId];
-  if (!demo || !demo.active) {
-    return callback({ error: 'No hay demostración activa' });
+  try {
+    // Inicializar estructura si no existe
+    if (!drawingVotes[partidaId]) {
+      drawingVotes[partidaId] = {};
+    }
+    
+    // Inicializar votos por equipo si no existen
+    if (!drawingVotes[partidaId][equipoNumero]) {
+      drawingVotes[partidaId][equipoNumero] = 0;
+    }
+    
+    // Inicializar votos de usuario si no existen
+    if (!userVotes[partidaId]) userVotes[partidaId] = {};
+    if (!userVotes[partidaId][userId]) userVotes[partidaId][userId] = new Set();
+    
+    // Verificar si ya votó por este equipo
+    if (userVotes[partidaId][userId].has(equipoNumero)) {
+      return callback({ error: 'Ya votaste por este equipo' });
+    }
+    
+    // Registrar voto
+    userVotes[partidaId][userId].add(equipoNumero);
+    drawingVotes[partidaId][equipoNumero] += 1;
+    
+    // Notificar a todos los cambios
+    io.to(`partida_${partidaId}`).emit('drawingVotesUpdated', {
+      partidaId,
+      votes: drawingVotes[partidaId],
+      topTeams: getTopTeams(drawingVotes[partidaId])
+    });
+    
+    callback({ success: true });
+  } catch (error) {
+    console.error('Error al votar:', error);
+    callback({ error: 'Error al registrar voto' });
   }
-
-  // Inicializar votos del usuario si no existen
-  if (!userVotes[partidaId]) userVotes[partidaId] = {};
-  if (!userVotes[partidaId][userId]) userVotes[partidaId][userId] = [];
-
-  // Verificar si ya votó por este equipo
-  if (userVotes[partidaId][userId].includes(equipoNumero)) {
-    return callback({ error: 'Ya votaste por este equipo' });
-  }
-
-  // Registrar voto
-  userVotes[partidaId][userId].push(equipoNumero);
-  demo.votes[equipoNumero] = (demo.votes[equipoNumero] || 0) + 1;
-
-  // Notificar actualización de votos
-  io.to(`partida_${partidaId}`).emit('drawingDemoVotesUpdated', demo.votes);
-
-  callback({ success: true });
 });
+
+socket.on('getDrawingVotes', (partidaId, callback) => {
+  const votes = drawingVotes[partidaId] || {};
+  callback({
+    votes,
+    topTeams: getTopTeams(votes)
+  });
+});
+
+socket.on('checkUserVote', ({ partidaId, userId, equipoNumero }, callback) => {
+  try {
+    const hasVoted = userVotes[partidaId]?.[userId]?.has(equipoNumero) || false;
+    callback({ hasVoted });
+  } catch (error) {
+    console.error('Error al verificar voto:', error);
+    callback({ error: 'Error al verificar voto' });
+  }
+});
+
+// Función auxiliar para obtener los equipos más votados
+function getTopTeams(votes) {
+  if (!votes) return [];
+  
+  const entries = Object.entries(votes);
+  if (entries.length === 0) return [];
+  
+  // Ordenar por votos descendente
+  entries.sort((a, b) => b[1] - a[1]);
+  
+  const maxVotes = entries[0][1];
+  if (maxVotes === 0) return [];
+  
+  // Filtrar equipos con máximo de votos
+  return entries
+    .filter(([_, count]) => count === maxVotes)
+    .map(([team]) => parseInt(team));
+}
 
 socket.on('drawingDemoStarted', (teams) => {
   setShowDemo(true);
