@@ -1199,6 +1199,14 @@ socket.on('nextGame', async (partidaId, callback) => {
       return callback({ completed: true });
     }
 
+    if (drawingVotes[partidaId]) delete drawingVotes[partidaId];
+    if (userVotes[partidaId]) delete userVotes[partidaId];
+
+    io.to(`partida_${partidaId}`).emit('drawingVotesUpdated', {
+      votes: {},
+      topTeams: []
+    });
+
     // Incrementar el índice
     config.currentIndex += 1;
     const currentGame = config.juegos[config.currentIndex];
