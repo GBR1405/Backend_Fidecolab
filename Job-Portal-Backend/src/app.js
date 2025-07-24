@@ -1605,102 +1605,87 @@ socket.on('guessLetter', ({ partidaId, equipoNumero, letra }) => {
     if (!game) throw new Error('Juego no encontrado');
     if (game.state.juegoTerminado) return;
 
-    // Validar letra
     const letraNormalizada = letra.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase();
-    if (!/^[A-Z]$/.test(letraNormalizada)) {
-      throw new Error('Letra no válida');
-    }
+    if (!/^[A-ZÑ]$/.test(letraNormalizada)) return;
 
-    // Verificar si ya se intentó
-    if (game.state.letrasIntentadas.includes(letraNormalizada)) {
-      return;
-    }
-
-    // Agregar a letras intentadas
+    // No repetir intento
+    if (game.state.letrasIntentadas.includes(letraNormalizada)) return;
     game.state.letrasIntentadas.push(letraNormalizada);
 
-    if (game.config.palabra.includes(letraNormalizada)) {
-      const uniqueLetters = [...new Set(game.config.palabra.split(''))];
-      const progress = Math.round((game.state.letrasAdivinadas.length / uniqueLetters.length) * 100);
-      const correctas = game.state.letrasAdivinadas.length;
-      const errores = game.state.letrasIntentadas.length - correctas;
-      updateTeamProgress(partidaId, equipoNumero, 'Ahorcado', { correctas, errores });
-    } else {
-      // Progreso basado en intentos restantes
-      const progress = Math.round((game.state.intentosRestantes / game.config.intentosMaximos) * 100);
-      const correctas = game.state.letrasAdivinadas.length;
-      const errores = game.state.letrasIntentadas.length - correctas;
-      updateTeamProgress(partidaId, equipoNumero, 'Ahorcado', { correctas, errores });
-    }
+    const palabra = game.config.palabra;
+    const ocurrencias = palabra.split('').filter(l => l === letraNormalizada).length;
 
-    // Verificar si está en la palabra
-    if (game.config.palabra.includes(letraNormalizada)) {
-        const ocurrencias = game.config.palabra
-          .split('')
-          .filter(l => l === letraNormalizada).length;
-
-        // Guardar cada aparición de la letra como acierto
-        for (let i = 0; i < ocurrencias; i++) {
-          game.state.letrasAdivinadas.push(letraNormalizada);
-        }
-      
-      // Verificar si ganó
-      const palabraUnica = [...new Set(game.config.palabra.split(''))];
-      if (palabraUnica.every(l => game.state.letrasAdivinadas.includes(l))) {
-        game.state.juegoTerminado = true;
-        game.state.ganado = true;
-
-        const currentIndex = global.partidasConfig?.[partidaId]?.currentIndex || 0;
-
-        if (!gameTeamTimestamps[partidaId]) gameTeamTimestamps[partidaId] = {};
-        if (!gameTeamTimestamps[partidaId][equipoNumero]) gameTeamTimestamps[partidaId][equipoNumero] = {};
-        if (!gameTeamTimestamps[partidaId][equipoNumero][currentIndex]) {
-          gameTeamTimestamps[partidaId][equipoNumero][currentIndex] = {};
-        }
-
-        if (!gameTeamTimestamps[partidaId][equipoNumero][currentIndex].completedAt) {
-          gameTeamTimestamps[partidaId][equipoNumero][currentIndex].completedAt = new Date();
-        }
+    if (ocurrencias > 0) {
+      // Acertó: agregar tantas veces como ocurrencias
+      for (let i = 0; i < ocurrencias; i++) {
+        game.state.letrasAdivinadas.push(letraNormalizada);
       }
     } else {
       game.state.intentosRestantes--;
-      
-      // Verificar si perdió
-      if (game.state.intentosRestantes <= 0) {
-        game.state.juegoTerminado = true;
-        game.state.ganado = false;
-
-        const currentIndex = global.partidasConfig?.[partidaId]?.currentIndex || 0;
-
-        if (!gameTeamTimestamps[partidaId]) gameTeamTimestamps[partidaId] = {};
-        if (!gameTeamTimestamps[partidaId][equipoNumero]) gameTeamTimestamps[partidaId][equipoNumero] = {};
-        if (!gameTeamTimestamps[partidaId][equipoNumero][currentIndex]) {
-          gameTeamTimestamps[partidaId][equipoNumero][currentIndex] = {};
-        }
-
-        if (!gameTeamTimestamps[partidaId][equipoNumero][currentIndex].completedAt) {
-          gameTeamTimestamps[partidaId][equipoNumero][currentIndex].completedAt = new Date();
-        }
-
-      }
     }
 
-    // Emitir estado actualizado con animación
-    const respuesta = {
+    // Progreso por número de letras adivinadas correctamente
+    const totalLetras = palabra.length;
+    const letrasAcertadas = game.state.letrasAdivinadas.length;
+    const letrasErradas = game.state.letrasIntentadas.length - [...new Set(game.state.letrasAdivinadas)].length;
+
+    // GUARDAR progreso con múltiples métricas
+    updateTeamProgress(partidaId, equipoNumero, 'Ahorcado', {
+      correctas: letrasAcertadas,
+      errores: letrasErradas,
+      total: totalLetras,
+      progreso: Math.round((letrasAcertadas / totalLetras) * 100)
+    });
+
+    // Verificar si ganó
+    const adivinadasSet = [...new Set(game.state.letrasAdivinadas)];
+    const palabraSet = [...new Set(palabra.split(''))];
+
+    if (palabraSet.every(l => adivinadasSet.includes(l))) {
+      game.state.juegoTerminado = true;
+      game.state.ganado = true;
+      const currentIndex = global.partidasConfig?.[partidaId]?.currentIndex || 0;
+      if (!gameTeamTimestamps[partidaId]) gameTeamTimestamps[partidaId] = {};
+      if (!gameTeamTimestamps[partidaId][equipoNumero]) gameTeamTimestamps[partidaId][equipoNumero] = {};
+      gameTeamTimestamps[partidaId][equipoNumero][currentIndex] = {
+        ...(gameTeamTimestamps[partidaId][equipoNumero][currentIndex] || {}),
+        completedAt: new Date()
+      };
+    }
+
+    // Verificar si perdió
+    if (game.state.intentosRestantes <= 0 && !game.state.ganado) {
+      game.state.juegoTerminado = true;
+      game.state.ganado = false;
+      const currentIndex = global.partidasConfig?.[partidaId]?.currentIndex || 0;
+      if (!gameTeamTimestamps[partidaId]) gameTeamTimestamps[partidaId] = {};
+      if (!gameTeamTimestamps[partidaId][equipoNumero]) gameTeamTimestamps[partidaId][equipoNumero] = {};
+      gameTeamTimestamps[partidaId][equipoNumero][currentIndex] = {
+        ...(gameTeamTimestamps[partidaId][equipoNumero][currentIndex] || {}),
+        completedAt: new Date()
+      };
+    }
+
+    io.to(`team-${partidaId}-${equipoNumero}`).emit('hangmanGameState', {
       ...game,
       animacion: {
-        tipo: game.config.palabra.includes(letraNormalizada) ? 'acierto' : 'error',
+        tipo: ocurrencias > 0 ? 'acierto' : 'error',
         letra: letraNormalizada
       }
-    };
-
-    io.to(`team-${partidaId}-${equipoNumero}`).emit('hangmanGameState', respuesta);
+    });
 
   } catch (error) {
     console.error('Error al adivinar letra:', error);
     socket.emit('hangmanGameError', { message: error.message });
   }
 });
+
+function getAhorcadoProgress(progressObj) {
+  if (!progressObj || typeof progressObj !== 'object') return '0%';
+  const { correctas = 0, total = 1 } = progressObj;
+  return `${Math.round((correctas / total) * 100)}%`;
+}
+
 
 socket.on('startHangmanVote', ({ partidaId, equipoNumero, letra, userId }) => {
   const voteKey = `${partidaId}-${equipoNumero}`;
@@ -2834,7 +2819,6 @@ async function generarResultadosJuegoActual(partidaId) {
     `);
 
   const totalEquipos = equiposQuery.recordset.map(row => row.Equipo_Numero);
-
   const resultados = [];
 
   for (const equipoNumero of totalEquipos) {
@@ -2842,7 +2826,6 @@ async function generarResultadosJuegoActual(partidaId) {
     let progreso = '';
     let comentario = '';
 
-    // Tiempo restante del juego
     const currentIndex = config.currentIndex;
     let tiempoJugado = "N/A";
 
@@ -2851,32 +2834,37 @@ async function generarResultadosJuegoActual(partidaId) {
     if (timestamps?.startedAt && timestamps?.completedAt) {
       const diffSeconds = Math.floor((new Date(timestamps.completedAt) - new Date(timestamps.startedAt)) / 1000);
       tiempoJugado = diffSeconds;
-}
+    }
 
+    // En caso especial para dibujo donde completedAt se puede no haber generado
     if (tiempoJugado === "N/A" && tipo === 'Dibujo') {
-    const now = new Date();
-    if (!gameTeamTimestamps?.[partidaId]) gameTeamTimestamps[partidaId] = {};
-    if (!gameTeamTimestamps[partidaId][equipoNumero]) gameTeamTimestamps[partidaId][equipoNumero] = {};
-    if (!gameTeamTimestamps[partidaId][equipoNumero][currentIndex]) {
-      gameTeamTimestamps[partidaId][equipoNumero][currentIndex] = {};
-    }
+      const now = new Date();
+      if (!gameTeamTimestamps?.[partidaId]) gameTeamTimestamps[partidaId] = {};
+      if (!gameTeamTimestamps[partidaId][equipoNumero]) gameTeamTimestamps[partidaId][equipoNumero] = {};
+      if (!gameTeamTimestamps[partidaId][equipoNumero][currentIndex]) {
+        gameTeamTimestamps[partidaId][equipoNumero][currentIndex] = {};
+      }
 
-    gameTeamTimestamps[partidaId][equipoNumero][currentIndex].completedAt = now;
-
-    const started = gameTeamTimestamps[partidaId][equipoNumero][currentIndex].startedAt;
-    if (started) {
-      const diffSeconds = Math.floor((now - new Date(started)) / 1000);
-      tiempoJugado = diffSeconds;
+      gameTeamTimestamps[partidaId][equipoNumero][currentIndex].completedAt = now;
+      const started = gameTeamTimestamps[partidaId][equipoNumero][currentIndex].startedAt;
+      if (started) {
+        const diffSeconds = Math.floor((now - new Date(started)) / 1000);
+        tiempoJugado = diffSeconds;
+      }
     }
-  }
 
     switch (tipo) {
       case 'Ahorcado': {
         const key = `hangman-${partidaId}-${equipoNumero}`;
         const game = hangmanGames[key];
         if (game) {
-          const intentosFallidos = game.state.letrasIntentadas.length - game.state.letrasAdivinadas.length;
-          progreso = `${game.state.letrasIntentadas.length}/${intentosFallidos}`;
+          const palabra = game.config.palabra;
+          const totalLetras = palabra.length;
+
+          const letrasAcertadas = game.state.letrasAdivinadas.length; // incluye repetidas
+          const letrasFalladas = game.state.letrasIntentadas.length - [...new Set(game.state.letrasAdivinadas)].length;
+
+          progreso = `${letrasAcertadas}/${letrasFalladas}`;
           tiempo = tiempoJugado;
         } else {
           progreso = "N/A";
@@ -2887,27 +2875,25 @@ async function generarResultadosJuegoActual(partidaId) {
       }
 
       case 'Dibujo': {
-      const key = `drawing-${partidaId}-${equipoNumero}`;
-      const game = drawingGames[key];
-      let imageData = game?.imageData || null;
+        const key = `drawing-${partidaId}-${equipoNumero}`;
+        const game = drawingGames[key];
+        let imageData = game?.imageData || null;
 
-      // Si no hay imagen, pero hay trazos, renderizar en base64 desde el servidor
-      if (!imageData && game?.actions && Object.keys(game.actions).length > 0) {
-        imageData = await renderDrawingToBase64(partidaId, equipoNumero);
+        if (!imageData && game?.actions && Object.keys(game.actions).length > 0) {
+          imageData = await renderDrawingToBase64(partidaId, equipoNumero);
+        }
+
+        if (imageData) {
+          progreso = '[Imagen en Base64]';
+          tiempo = tiempoJugado;
+          comentario = imageData;
+        } else {
+          progreso = "N/A";
+          tiempo = obtenerTiempoMaximoJuego(tipo, juegoActual.dificultad);
+          comentario = "Juego No Participado";
+        }
+        break;
       }
-
-      if (imageData) {
-        progreso = '[Imagen en Base64]';
-        tiempo = tiempoJugado;
-        comentario = imageData;
-      } else {
-        progreso = "N/A";
-        tiempo = obtenerTiempoMaximoJuego(tipo, juegoActual.dificultad);
-        comentario = "Juego No Participado";
-      }
-      break;
-    }
-
 
       case 'Memoria': {
         const key = `memory-${partidaId}-${equipoNumero}-${config.currentIndex}`;
@@ -2924,25 +2910,24 @@ async function generarResultadosJuegoActual(partidaId) {
       }
 
       case 'Rompecabezas': {
-      const key = `puzzle-${partidaId}-${equipoNumero}`;
-      const game = puzzleGames[key];
+        const key = `puzzle-${partidaId}-${equipoNumero}`;
+        const game = puzzleGames[key];
 
-      const progress = gameTeamProgress?.[partidaId]?.[equipoNumero]?.[currentIndex];
-      if (typeof progress === 'number') {
-        progreso = `${progress}%`;
-      } else {
-        progreso = 'N/A';
+        const progress = gameTeamProgress?.[partidaId]?.[equipoNumero]?.[currentIndex];
+        if (typeof progress === 'number') {
+          progreso = `${progress}%`;
+        } else {
+          progreso = 'N/A';
+        }
+
+        if (game) {
+          tiempo = tiempoJugado;
+        } else {
+          tiempo = obtenerTiempoMaximoJuego(tipo, juegoActual.dificultad);
+          comentario = "Juego No Participado";
+        }
+        break;
       }
-
-      if (game) {
-        tiempo = tiempoJugado;
-      } else {
-        tiempo = obtenerTiempoMaximoJuego(tipo, juegoActual.dificultad);
-        comentario = "Juego No Participado";
-      }
-      break;
-
-    }
     }
 
     resultados.push({
@@ -2962,6 +2947,7 @@ async function generarResultadosJuegoActual(partidaId) {
 
   return resultados;
 }
+
 
 async function evaluarLogrosPersonales(partidaId) {
   try {
