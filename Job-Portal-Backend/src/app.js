@@ -2831,9 +2831,15 @@ async function generarResultadosJuegoActual(partidaId) {
 
     const timestamps = gameTeamTimestamps?.[partidaId]?.[equipoNumero]?.[currentIndex];
 
-    if (timestamps?.startedAt && timestamps?.completedAt) {
-      const diffSeconds = Math.floor((new Date(timestamps.completedAt) - new Date(timestamps.startedAt)) / 1000);
+    if (timestamps?.startedAt) {
+      const fin = timestamps?.completedAt || new Date();
+      const diffSeconds = Math.floor((new Date(fin) - new Date(timestamps.startedAt)) / 1000);
       tiempoJugado = diffSeconds;
+    }
+
+    // Si no hay timestamps, usa tiempo máximo
+    if (tiempoJugado === "N/A") {
+      tiempoJugado = obtenerTiempoMaximoJuego(tipo, juegoActual.dificultad);
     }
 
     // En caso especial para dibujo donde completedAt se puede no haber generado
@@ -2855,7 +2861,7 @@ async function generarResultadosJuegoActual(partidaId) {
 
     switch (tipo) {
       case 'Ahorcado': {
-        const key = `hangman-${partidaId}-${equipoNumero}`;
+        const key = `hangman-${partidaId}-${equipoNumero}-${config.currentIndex}`;
         const game = hangmanGames[key];
         if (game) {
           const palabra = game.config.palabra;
