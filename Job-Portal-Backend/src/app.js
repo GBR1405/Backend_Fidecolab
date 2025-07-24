@@ -1599,7 +1599,8 @@ socket.on('initHangmanGame', ({ partidaId, equipoNumero }) => {
 // Evento para adivinar letra
 socket.on('guessLetter', ({ partidaId, equipoNumero, letra }) => {
   try {
-    const gameId = `hangman-${partidaId}-${equipoNumero}-${config.currentIndex}`;
+    const currentIndex = global.partidasConfig?.[partidaId]?.currentIndex || 0;
+    const gameId = `hangman-${partidaId}-${equipoNumero}-${currentIndex}`;
     const game = hangmanGames[gameId];
     
     if (!game) throw new Error('Juego no encontrado');
