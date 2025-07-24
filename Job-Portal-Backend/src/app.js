@@ -1531,7 +1531,7 @@ socket.on('initHangmanGame', ({ partidaId, equipoNumero }) => {
       throw new Error('El juego actual no es Ahorcado');
     }
 
-    const gameId = `hangman-${partidaId}-${equipoNumero}`;
+    const gameId = `hangman-${partidaId}-${equipoNumero}-${config.currentIndex}`;
     
     // Si ya existe, enviar estado actual
     if (hangmanGames[gameId]) {
