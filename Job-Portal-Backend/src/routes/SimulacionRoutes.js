@@ -1,6 +1,7 @@
 import express from 'express';
 import {checkParticipation, checkGroup, checkActivity, getResults, getFullUserGames } from '../controllers/simulatorController.js';
 import authMiddleware from '../middleware/authMiddleware.js';
+import { roleMiddleware } from "../middleware/roleMiddleware.js";
 
 const router = express.Router();
 
