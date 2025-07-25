@@ -586,8 +586,152 @@ export const getFullUserGames = async (req, res) => {
   }
 };
 
+export const obtenerResultadosProfesor = async (req, res) => {
+  const userId = req.user.id;
+
+  try {
+    const pool = await poolPromise;
+
+    // Obtener partidas del profesor
+    const partidasResult = await pool.request().query(`
+      SELECT Partida_ID_PK, FechaFin, Profesor_ID_FK, Grupo_ID_FK
+      FROM Partida_TB
+    `);
+
+    const partidas = partidasResult.recordset.filter(p => p.Profesor_ID_FK === userId);
+
+    // Obtener resultados
+    const resultadosQuery = await pool.request().query(`
+      SELECT Partida_ID_FK
+      FROM Resultados_TB
+    `);
+
+    const resultados = resultadosQuery.recordset;
+
+    // Obtener cursos y grupos
+    const gruposQuery = await pool.request().query(`
+      SELECT GrupoCurso_ID_PK, Codigo_Grupo, Curso_ID_FK
+      FROM GrupoCurso_TB
+    `);
+    const grupos = gruposQuery.recordset;
+
+    const cursosQuery = await pool.request().query(`
+      SELECT CodigoCurso_ID_PK, Nombre_Curso, Codigo_Curso
+      FROM CodigoCurso_TB
+    `);
+    const cursos = cursosQuery.recordset;
+
+    // Filtrar partidas que tienen al menos un resultado
+    const partidasConResultados = partidas.filter(partida =>
+      resultados.some(r => r.Partida_ID_FK === partida.Partida_ID_PK)
+    );
+
+    // Ordenar por fecha descendente y mapear
+    const partidasOrdenadas = partidasConResultados
+      .sort((a, b) => new Date(b.FechaFin) - new Date(a.FechaFin))
+      .map(partida => {
+        const grupo = grupos.find(g => g.GrupoCurso_ID_PK === partida.Grupo_ID_FK);
+        const curso = cursos.find(c => c.CodigoCurso_ID_PK === grupo?.Curso_ID_FK);
+        return {
+          fecha: partida.FechaFin,
+          curso: `${curso?.Codigo_Curso}-${curso?.Nombre_Curso} G${grupo?.Codigo_Grupo}`,
+          accion: "ver más"
+        };
+      });
+
+    return res.status(200).json({
+      success: true,
+      data: partidasOrdenadas
+    });
+
+  } catch (error) {
+    console.error("Error en obtenerResultadosProfesor:", error);
+    return res.status(500).json({ success: false, message: "Error al obtener los resultados del profesor" });
+  }
+};
 
 
+export const obtenerResultadoEstudiante = async (req, res) => {
+  const userId = req.user.id;
+
+  try {
+    const pool = await poolPromise;
+
+    // Obtener todas las participaciones del estudiante
+    const participacionesQuery = await pool.request()
+      .input("userId", sql.Int, userId)
+      .query(`
+        SELECT Partida_ID_FK, Equipo_Numero
+        FROM Participantes_TB
+        WHERE Usuario_ID_FK = @userId
+      `);
+
+    const participaciones = participacionesQuery.recordset;
+
+    if (participaciones.length === 0) {
+      return res.status(200).json({ success: true, data: [] });
+    }
+
+    // Obtener resultados
+    const resultadosQuery = await pool.request().query(`
+      SELECT Resultados_ID_PK, Equipo, Partida_ID_FK, Resultados, Comentario
+      FROM Resultados_TB
+    `);
+
+    const resultados = resultadosQuery.recordset;
+
+    // Obtener partidas, grupos y cursos
+    const partidasQuery = await pool.request().query(`
+      SELECT Partida_ID_PK, FechaFin, Grupo_ID_FK
+      FROM Partida_TB
+    `);
+    const partidas = partidasQuery.recordset;
+
+    const gruposQuery = await pool.request().query(`
+      SELECT GrupoCurso_ID_PK, Codigo_Grupo, Curso_ID_FK
+      FROM GrupoCurso_TB
+    `);
+    const grupos = gruposQuery.recordset;
+
+    const cursosQuery = await pool.request().query(`
+      SELECT CodigoCurso_ID_PK, Nombre_Curso, Codigo_Curso
+      FROM CodigoCurso_TB
+    `);
+    const cursos = cursosQuery.recordset;
+
+    // Extraer resultados relevantes
+    const resultadosUsuario = resultados.filter(res =>
+      participaciones.some(p =>
+        p.Partida_ID_FK === res.Partida_ID_FK && p.Equipo_Numero === res.Equipo
+      )
+    );
+
+    // Ordenar resultados por fecha de partida
+    const resultadosOrdenados = resultadosUsuario
+      .map(res => {
+        const partida = partidas.find(p => p.Partida_ID_PK === res.Partida_ID_FK);
+        const grupo = grupos.find(g => g.GrupoCurso_ID_PK === partida?.Grupo_ID_FK);
+        const curso = cursos.find(c => c.CodigoCurso_ID_PK === grupo?.Curso_ID_FK);
+
+        return {
+          fecha: partida?.FechaFin,
+          curso: `${curso?.Codigo_Curso}-${curso?.Nombre_Curso} G${grupo?.Codigo_Grupo}`,
+          equipo: res.Equipo,
+          accion: "ver más"
+        };
+      })
+      .sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
+
+    return res.status(200).json({
+      success: true,
+      data: resultadosOrdenados
+    });
+
+  } catch (error) {
+    console.error("Error en obtenerResultadoEstudiante:", error);
+    return res.status(500).json({ success: false, message: "Error al obtener los resultados del estudiante" });
+  }
+};
 
 
 
