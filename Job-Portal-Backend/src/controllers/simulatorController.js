@@ -709,17 +709,19 @@ export const obtenerResultadoEstudiante = async (req, res) => {
     // Ordenar resultados por fecha de partida
     const resultadosOrdenados = resultadosUsuario
       .map(res => {
-        const partida = partidas.find(p => p.Partida_ID_PK === res.Partida_ID_FK);
-        const grupo = grupos.find(g => g.GrupoCurso_ID_PK === partida?.Grupo_ID_FK);
-        const curso = cursos.find(c => c.CodigoCurso_ID_PK === grupo?.Curso_ID_FK);
+      const partida = partidas.find(p => p.Partida_ID_PK === res.Partida_ID_FK);
+      const grupo = grupos.find(g => g.GrupoCurso_ID_PK === partida?.Grupo_ID_FK);
+      const curso = cursos.find(c => c.CodigoCurso_ID_PK === grupo?.Curso_ID_FK);
 
-        return {
-          fecha: partida?.FechaFin,
-          curso: `${curso?.Codigo_Curso}-${curso?.Nombre_Curso} G${grupo?.Codigo_Grupo}`,
-          equipo: res.Equipo,
-          accion: "ver más"
-        };
-      })
+      return {
+        id: res.Partida_ID_FK,
+        PartidaID: partida?.Partida_ID_PK, // 👈 Aquí añadís el verdadero ID de la partida
+        fecha: partida?.FechaFin,
+        curso: `${curso?.Codigo_Curso}-${curso?.Nombre_Curso} G${grupo?.Codigo_Grupo}`,
+        equipo: res.Equipo,
+        accion: "ver más"
+      };
+    })
       .sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
 
     return res.status(200).json({
