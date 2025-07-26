@@ -633,6 +633,7 @@ export const obtenerResultadosProfesor = async (req, res) => {
         const grupo = grupos.find(g => g.GrupoCurso_ID_PK === partida.Grupo_ID_FK);
         const curso = cursos.find(c => c.CodigoCurso_ID_PK === grupo?.Curso_ID_FK);
         return {
+          id: partida.Partida_ID_PK, // 👈 aquí agregamos el ID de la partida
           fecha: partida.FechaFin,
           curso: `${curso?.Codigo_Curso}-${curso?.Nombre_Curso} G${grupo?.Codigo_Grupo}`,
           accion: "ver más"
@@ -649,6 +650,7 @@ export const obtenerResultadosProfesor = async (req, res) => {
     return res.status(500).json({ success: false, message: "Error al obtener los resultados del profesor" });
   }
 };
+
 
 
 export const obtenerResultadoEstudiante = async (req, res) => {
