@@ -36,17 +36,15 @@ function generateRandomPassword() {
  * Agregar un nuevo usuario
  */
 export const agregarUsuario = async (req, res) => {
-  const { nombre, apellido1, apellido2, rol, genero } = req.body;
+  const { nombre, apellido1, apellido2, correo, rol, genero } = req.body;
 
-  if (!nombre || !apellido1 || !apellido2 || !rol || !genero) {
+  if (!nombre || !apellido1 || !apellido2 || !correo ||  !rol || !genero) {
     return res.status(400).json({ success: false, message: "Todos los campos son obligatorios" });
   }
 
   try {
     const pool = await poolPromise;
 
-    // Generar correo y contraseña automáticos
-    const correo = `${nombre.toLowerCase()}.${apellido1.toLowerCase()}@fidecolab.com`;
     const password = generateRandomPassword();
     const hashedPassword = await bcrypt.hash(password, 10);
 
