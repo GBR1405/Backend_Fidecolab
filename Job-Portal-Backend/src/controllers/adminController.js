@@ -933,49 +933,6 @@ export const guardarGrupo = async (req, res) => {
   }
 };
 
-const getLogoImage = async () => {
-  const localPath = path.join(process.cwd(), 'assets', 'u_fidelitas.png');
-  
-  if (fs.existsSync(localPath)) {
-    return localPath;
-  }
-
-  try {
-    const imageUrl = "https://www.coopeande1.com/sites/default/files/styles/420_width_retina/public/2021-01/u_fidelitas.png?itok=DC77XGsA";
-    const tempPath = path.join(process.cwd(), 'temp', 'u_fidelitas.png');
-    
-    if (!fs.existsSync(path.dirname(tempPath))) {
-      fs.mkdirSync(path.dirname(tempPath), { recursive: true });
-    }
-
-    const response = await axios({
-      method: 'get',
-      url: imageUrl,
-      responseType: 'stream'
-    });
-
-    await new Promise((resolve, reject) => {
-      const writer = fs.createWriteStream(tempPath);
-      response.data.pipe(writer);
-      writer.on('finish', resolve);
-      writer.on('error', reject);
-    });
-
-    return tempPath;
-  } catch (error) {
-    console.error('Error descargando logo:', error);
-    return null;
-  }
-};
-
-// Luego en tu función:
-const logoPath = await getLogoImage();
-if (logoPath) {
-  doc.image(logoPath, 50, 20, { width: 80 });
-} else {
-  // Dibujar placeholder
-}
-
 async function generatePDF(profesores, saltados) {
   return new Promise(async (resolve, reject) => {
     if (profesores.length === 0) return resolve("");
@@ -983,159 +940,100 @@ async function generatePDF(profesores, saltados) {
     const reportsDir = path.join(process.cwd(), "reports");
     if (!fs.existsSync(reportsDir)) fs.mkdirSync(reportsDir, { recursive: true });
 
-    const filename = `Profesores_Nuevos_${new Date().toISOString().slice(0, 10)}.pdf`;
-    const filePath = path.join(reportsDir, filename);
-    const doc = new PDFDocument({ 
-      margin: 40, 
-      size: 'A4',
-      bufferPages: true
-    });
-    
-    const stream = fs.createWriteStream(filePath);
-    doc.pipe(stream);
+    const imageUrl = "https://www.coopeande1.com/sites/default/files/styles/420_width_retina/public/2021-01/u_fidelitas.png?itok=DC77XGsA";
+    const imagePath = path.join(reportsDir, "u_fidelitas.png");
+    const imageWriter = fs.createWriteStream(imagePath);
 
-    const primaryColor = '#003366';
-    const secondaryColor = '#f5f5f5';
-    const tableRowHeight = 30;
-    const rowGap = 5;
-    const maxRowsPerPage = 20;
+    const imageResponse = await axios({ method: 'get', url: imageUrl, responseType: 'stream' });
+    imageResponse.data.pipe(imageWriter);
 
-    // Obtener el directorio actual (solución para ES modules)
-    const currentDir = process.cwd();
-    const imagePath = path.join(currentDir, 'assets', 'u_fidelitas.png');
+    imageWriter.on('finish', () => {
+      const filename = `Profesores_Nuevos_${new Date().toISOString().slice(0, 10)}.pdf`;
+      const filePath = path.join(reportsDir, filename);
+      const doc = new PDFDocument({ margin: 40, size: 'A4' });
+      const stream = fs.createWriteStream(filePath);
+      doc.pipe(stream);
 
-    let currentY = 80;
-    let pageNumber = 1;
+      const primaryColor = '#003366';
+      const tableRowHeight = 30;
+      const profesoresPerPage = 22;
+      let currentY = 80;
 
-    const addHeader = () => {
-      // Verificar si la imagen existe antes de intentar usarla
-      if (fs.existsSync(imagePath)) {
+      const addHeader = () => {
         doc.image(imagePath, 50, 20, { width: 80 });
-      } else {
-        console.warn('Logo no encontrado en:', imagePath);
-        // Dibujar un placeholder si la imagen no existe
-        doc.rect(50, 20, 80, 60).fill('#dddddd')
-           .fillColor('#999').text('LOGO', 50, 45, { width: 80, align: 'center' });
-      }
-      
-      doc.fontSize(18).font('Helvetica-Bold').fillColor(primaryColor)
-         .text('Universidad Fidelitas', 140, 30)
-         .fontSize(10).font('Helvetica').fillColor('#666')
-         .text('Sistema de Gestión Académica', 140, 55)
-         .moveTo(50, 80).lineTo(550, 80).lineWidth(2).stroke(primaryColor);
-      
-      currentY = 100;
-    };
-
-    // Resto del código permanece igual...
-    const addTitle = () => {
-      doc.fontSize(16).font('Helvetica-Bold').fillColor(primaryColor)
-         .text('REPORTE DE NUEVOS PROFESORES', 0, currentY, { align: 'center' });
-      
-      currentY += 25;
-      doc.fontSize(12).fillColor('black')
-         .text(`Total de profesores agregados: ${profesores.length}`, { align: 'center' });
-      
-      currentY += 15;
-      const saltadoMsg = saltados === 0
-        ? 'No se omitió ningún profesor.'
-        : (saltados === profesores.length
-            ? 'Se omitieron todos los profesores porque ya existían.'
-            : `Se omitieron ${saltados} profesores porque ya existían.`);
-      
-      doc.text(saltadoMsg, { align: 'center' });
-      currentY += 40;
-    };
-
-    const drawTableHeader = () => {
-      const tableLeft = 50;
-      const columnWidths = [180, 180, 120]; 
-      const tableWidth = columnWidths.reduce((a, b) => a + b, 0);
-
-      if (currentY + tableRowHeight > doc.page.height - 50) {
-        doc.addPage();
-        addHeader();
+        doc.fontSize(18).font('Helvetica-Bold').fillColor(primaryColor).text('Universidad Fidelitas', 140, 30);
+        doc.fontSize(10).font('Helvetica').fillColor('#666').text('Sistema de Gestión Académica', 140, 55);
+        doc.moveTo(50, 80).lineTo(550, 80).lineWidth(2).stroke(primaryColor);
         currentY = 100;
-      }
+      };
 
-      doc.rect(tableLeft, currentY, tableWidth, tableRowHeight).fill(primaryColor);
-      
-      let x = tableLeft;
-      doc.fontSize(11).fillColor('white').font('Helvetica-Bold');
-      
-      doc.text('Nombre completo', x + 5, currentY + 10, { 
-        width: columnWidths[0] - 10, 
-        align: 'left' 
-      });
-      
-      x += columnWidths[0];
-      doc.text('Correo electrónico', x + 5, currentY + 10, { 
-        width: columnWidths[1] - 10, 
-        align: 'left' 
-      });
-      
-      x += columnWidths[1];
-      doc.text('Contraseña', x + 5, currentY + 10, { 
-        width: columnWidths[2] - 10, 
-        align: 'center' 
-      });
+      const addTitle = () => {
+        doc.fontSize(16).font('Helvetica-Bold').fillColor(primaryColor)
+          .text('REPORTE DE NUEVOS PROFESORES', 0, currentY, { align: 'center' });
+        currentY += 25;
+        doc.fontSize(12).fillColor('black')
+          .text(`Total de profesores agregados: ${profesores.length}`, { align: 'center' });
+        currentY += 15;
+        const saltadoMsg = saltados === 0
+          ? 'No se omitió ningún profesor.'
+          : (saltados === profesores.length
+              ? 'Se omitieron todos los profesores porque ya existían.'
+              : `Se omitieron ${saltados} profesores porque ya existían.`);
+        doc.text(saltadoMsg, { align: 'center' });
+        currentY += 40;
+      };
 
-      currentY += tableRowHeight + rowGap;
-      return columnWidths;
-    };
+      const drawTableHeader = () => {
+        const tableLeft = 50;
+        const columnWidths = [160, 170, 120];
+        const tableWidth = columnWidths.reduce((a, b) => a + b, 0);
 
-    // Primera página
-    addHeader();
-    addTitle();
-    const columnWidths = drawTableHeader();
+        doc.rect(tableLeft, currentY, tableWidth, tableRowHeight).fill(primaryColor);
+        let x = tableLeft;
+        doc.fontSize(12).fillColor('white').font('Helvetica-Bold');
+        doc.text('Nombre completo', x + 5, currentY + 8, { width: columnWidths[0] - 10, align: 'center' });
+        x += columnWidths[0];
+        doc.text('Correo electrónico', x + 5, currentY + 8, { width: columnWidths[1] - 10, align: 'center' });
+        x += columnWidths[1];
+        doc.text('Contraseña', x + 5, currentY + 8, { width: columnWidths[2] - 10, align: 'center' });
 
-    profesores.forEach((prof, index) => {
-      if (currentY + tableRowHeight > doc.page.height - 50) {
-        doc.addPage();
+        currentY += tableRowHeight;
+        return columnWidths;
+      };
+
+      const totalPages = Math.ceil(profesores.length / profesoresPerPage);
+      for (let i = 0; i < totalPages; i++) {
+        if (i > 0) doc.addPage();
         addHeader();
-        drawTableHeader();
+        if (i === 0) addTitle();
+        const columnWidths = drawTableHeader();
+        const profSlice = profesores.slice(i * profesoresPerPage, (i + 1) * profesoresPerPage);
+
+        profSlice.forEach((prof, idx) => {
+          const tableLeft = 50;
+          const tableWidth = columnWidths.reduce((a, b) => a + b, 0);
+          if (idx % 2 === 0) {
+            doc.rect(tableLeft, currentY, tableWidth, tableRowHeight).fill('#f5f5f5');
+          }
+
+          let x = tableLeft;
+          const fullName = `${prof.name} ${prof.lastName1} ${prof.lastName2}`;
+          doc.fillColor('black').font('Helvetica').fontSize(10);
+          doc.text(fullName, x + 5, currentY + 5, { width: columnWidths[0] - 10 });
+          x += columnWidths[0];
+          doc.text(prof.email, x + 5, currentY + 5, { width: columnWidths[1] - 10 });
+          x += columnWidths[1];
+          doc.text(prof.generatedPassword, x + 5, currentY + 5, { width: columnWidths[2] - 10, align: 'center' });
+
+          currentY += tableRowHeight;
+        });
       }
 
-      const tableLeft = 50;
-      const tableWidth = columnWidths.reduce((a, b) => a + b, 0);
-
-      if (index % 2 === 0) {
-        doc.rect(tableLeft, currentY, tableWidth, tableRowHeight).fill(secondaryColor);
-      }
-
-      let x = tableLeft;
-      const fullName = `${prof.name} ${prof.lastName1} ${prof.lastName2}`;
-      
-      doc.fillColor('black').font('Helvetica').fontSize(10);
-      
-      doc.text(fullName, x + 5, currentY + 10, { 
-        width: columnWidths[0] - 10,
-        lineGap: 5
-      });
-      
-      x += columnWidths[0];
-      doc.text(prof.email, x + 5, currentY + 10, { 
-        width: columnWidths[1] - 10,
-        lineGap: 5
-      });
-      
-      x += columnWidths[1];
-      doc.text(prof.generatedPassword, x + 5, currentY + 10, { 
-        width: columnWidths[2] - 10, 
-        align: 'center',
-        lineGap: 5
-      });
-
-      currentY += tableRowHeight + rowGap;
+      doc.end();
+      stream.on('finish', () => resolve(filePath));
     });
 
-    doc.fontSize(10).fillColor('#666')
-       .text(`Generado el ${new Date().toLocaleDateString()}`, 50, doc.page.height - 30);
-
-    doc.end();
-
-    stream.on('finish', () => resolve(filePath));
-    stream.on('error', reject);
+    imageWriter.on('error', reject);
   });
 }
 
