@@ -2010,6 +2010,8 @@ socket.on('drawingAction', ({ partidaId, equipoNumero, userId, action }) => {
       break;
     }
 
+
+
     case 'clear':
     if (action.isLocalReset) {
       // SOLO actualiza el estado del usuario que limpió
@@ -2035,7 +2037,9 @@ socket.on('drawingAction', ({ partidaId, equipoNumero, userId, action }) => {
       });
 
       // Enviar tinta actualizada solo al usuario que borró
-      
+      socket.emit('drawingGameState', {
+        actions: []
+      });
       return;
     }
   }
