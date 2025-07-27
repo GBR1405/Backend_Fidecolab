@@ -3170,7 +3170,7 @@ async function asignarLogro(usuarioId, nombreLogro, tipoLogro) {
         .input('logroId', sql.Int, logroId)
         .query(`
           SELECT COUNT(*) AS total
-          FROM Usuario_Logro_TB
+          FROM Usuario_Logros_TB
           WHERE Usuario_ID_FK = @usuarioId AND Logro_ID_FK = @logroId
         `);
       
@@ -3186,7 +3186,7 @@ async function asignarLogro(usuarioId, nombreLogro, tipoLogro) {
       .input('logroId', sql.Int, logroId)
       .input('fechaObtencion', sql.DateTime, new Date())
       .query(`
-        INSERT INTO Usuario_Logro_TB (Usuario_ID_FK, Logro_ID_FK, Fecha_Obtencion)
+        INSERT INTO Usuario_Logros_TB (Usuario_ID_FK, Logro_ID_FK, Fecha_Obtencion)
         VALUES (@usuarioId, @logroId, @fechaObtencion)
       `);
     
@@ -3240,7 +3240,7 @@ async function verificarLogrosNivel(usuarioId) {
         .input('nombreLogro', sql.VarChar(100), tipoLogro.base)
         .query(`
           SELECT COUNT(*) AS total
-          FROM Usuario_Logro_TB ul
+          FROM Usuario_Logros_TB ul
           JOIN Logros_TB l ON ul.Logro_ID_FK = l.Logro_ID_PK
           WHERE ul.Usuario_ID_FK = @usuarioId AND l.Nombre = @nombreLogro
         `);
@@ -3339,7 +3339,7 @@ async function verificarLogroCazadorDeLogros(usuarioId, partidaId) {
       .input('fechaInicio', sql.DateTime, fechaInicio)
       .query(`
         SELECT COUNT(*) AS total
-        FROM Usuario_Logro_TB
+        FROM Usuario_Logros_TB
         WHERE Usuario_ID_FK = @usuarioId AND Fecha_Obtencion >= @fechaInicio
       `);
     
