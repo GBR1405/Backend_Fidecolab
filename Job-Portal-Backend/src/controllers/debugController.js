@@ -1899,7 +1899,8 @@ export const obtenerHistorialPartidas = async (req, res) => {
     const partidasResult = await pool.request().query(`
       SELECT DISTINCT
         p.Partida_ID_PK as id_partida,
-        CONVERT(varchar, p.FechaInicio, 120) as FechaInicio,
+        p.FechaInicio,
+        CONVERT(varchar, p.FechaInicio, 120) as FechaInicioStr,
         CONCAT(u.Nombre, ' ', u.Apellido1) as profesor,
         cc.Codigo_Curso + '-' + cc.Nombre_Curso + ' G' + CAST(gc.Codigo_Grupo AS NVARCHAR) as curso_grupo,
         (SELECT COUNT(*) FROM Participantes_TB WHERE Partida_ID_FK = p.Partida_ID_PK) as total_estudiantes
