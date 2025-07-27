@@ -1973,55 +1973,66 @@ socket.on('activarDemostracion', (partidaId) => {
 
 
 socket.on('drawingAction', ({ partidaId, equipoNumero, userId, action }) => {
-  const gameId = `drawing-${partidaId}-${equipoNumero}`;
+  const gameId = `drawing-${partidaId}-${equipoNumero}`;
 
-  if (!drawingGames[gameId]) {
-    drawingGames[gameId] = {
-      actions: {},
-      tintaStates: {}
-    };
-  }
+  if (!drawingGames[gameId]) {
+    drawingGames[gameId] = {
+      actions: {},
+      tintaStates: {}
+    };
+  }
 
-  if (!drawingGames[gameId].actions[userId]) {
-    drawingGames[gameId].actions[userId] = [];
-  }
+  if (!drawingGames[gameId].actions[userId]) {
+    drawingGames[gameId].actions[userId] = [];
+  }
 
-  switch (action.type) {
-    case 'pathStart':
-      drawingGames[gameId].actions[userId].push(action.path);
-      break;
+  switch (action.type) {
+    case 'pathStart':
+      drawingGames[gameId].actions[userId].push(action.path);
+      break;
 
-    case 'pathUpdate':
-    case 'pathComplete':
-      const userActions = drawingGames[gameId].actions[userId];
-      const existingActionIndex = userActions.findIndex(a => a.id === action.path.id);
+    case 'pathUpdate':
+    case 'pathComplete': {
+      const userActions = drawingGames[gameId].actions[userId];
+      const existingActionIndex = userActions.findIndex(a => a.id === action.path.id);
 
-      if (existingActionIndex >= 0) {
-        userActions[existingActionIndex] = action.path;
-      } else {
-        userActions.push(action.path);
-      }
-      break;
+      if (existingActionIndex >= 0) {
+        userActions[existingActionIndex] = action.path;
+      } else {
+        userActions.push(action.path);
+      }
+      break;
+    }
 
-    case 'clear':
-      delete drawingGames[gameId].actions[userId];
-      drawingGames[gameId].tintaStates[userId] = 5000;
+    case 'clear':
+      // Borrar trazos del usuario
+      delete drawingGames[gameId].actions[userId];
 
-      // Notificar a todos que se borró
-      io.to(`team-${partidaId}-${equipoNumero}`).emit('drawingAction', {
-        type: 'clear',
-        userId,
-        tinta: 5000
-      });
-      return; // ⚠️ Evita doble emisión
-  }
+      // Reiniciar tinta SOLO para ese usuario
+      drawingGames[gameId].tintaStates[userId] = 5000;
 
-  // ✅ Esta es la forma correcta
-  io.to(`team-${partidaId}-${equipoNumero}`).emit('drawingAction', {
-    userId,
-    ...action
-  });
+      // Enviar acción de borrado a todos (solo borra trazos visuales)
+      io.to(`team-${partidaId}-${equipoNumero}`).emit('drawingAction', {
+        type: 'clear',
+        userId
+      });
+
+      // 🔄 Enviar tinta actualizada solo al usuario que borró
+      io.to(socket.id).emit('drawingGameState', {
+        actions: [],
+        tintaState: { [userId]: 5000 }
+      });
+
+      return; // ⚠️ Detener aquí
+  }
+
+  // Para otras acciones (dibujo)
+  io.to(`team-${partidaId}-${equipoNumero}`).emit('drawingAction', {
+    userId,
+    ...action
+  });
 });
+
 
 
 
