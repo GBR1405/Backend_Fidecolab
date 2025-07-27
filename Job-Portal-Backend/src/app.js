@@ -151,6 +151,8 @@ const puzzleSelections = {};
 const lockedPieces = {};
 const drawingDemoState = {};
 
+const MAX_TINTA = 5000;
+
 
 
 const VOTING_TIME = 5000;
