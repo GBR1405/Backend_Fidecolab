@@ -2005,6 +2005,20 @@ socket.on('drawingAction', ({ partidaId, equipoNumero, userId, action }) => {
     }
 
     case 'clear':
+
+    case 'clear':
+    if (action.isLocalReset) {
+      // SOLO actualiza el estado del usuario que limpió
+      drawingGames[gameId].tintaStates[userId] = MAX_TINTA;
+      delete drawingGames[gameId].actions[userId];
+      
+      // Notificar SOLO al usuario que limpió
+      io.to(socket.id).emit('tintaUpdate', {
+        userId,
+        tinta: MAX_TINTA
+      });
+    } else {
+
       delete drawingGames[gameId].actions[userId];
       
       // Reiniciar tinta SOLO para ese usuario
@@ -2022,6 +2036,7 @@ socket.on('drawingAction', ({ partidaId, equipoNumero, userId, action }) => {
         tintaState: { [userId]: 5000 }
       });
       return;
+    }
   }
 
   // Para otras acciones (dibujo)
