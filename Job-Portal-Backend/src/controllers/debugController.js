@@ -1912,7 +1912,7 @@ export const obtenerHistorialPartidas = async (req, res) => {
 
     const historial = partidasResult.recordset.map(partida => ({
       id: partida.id_partida,
-      fecha: partida.FechaInicio, 
+      fecha: partida.FechaInicio,
       profesor: partida.profesor,
       curso: partida.curso_grupo,
       total_estudiantes: partida.total_estudiantes
