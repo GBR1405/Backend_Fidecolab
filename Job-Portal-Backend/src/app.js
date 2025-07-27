@@ -2010,38 +2010,27 @@ socket.on('drawingAction', ({ partidaId, equipoNumero, userId, action }) => {
       break;
     }
 
-
-
     case 'clear':
-    if (action.isLocalReset) {
-      // SOLO actualiza el estado del usuario que limpió
-      drawingGames[gameId].tintaStates[userId] = MAX_TINTA;
-      delete drawingGames[gameId].actions[userId];
-      
-      // Notificar SOLO al usuario que limpió
-      io.to(socket.id).emit('tintaUpdate', {
-        userId,
-        tinta: MAX_TINTA
-      });
-    } else {
-
-      delete drawingGames[gameId].actions[userId];
-      
-      // Reiniciar tinta SOLO para ese usuario
-      drawingGames[gameId].tintaStates[userId] = 5000;
-
-      // Enviar acción de borrado a todos (solo borra trazos visuales)
-      socket.to(`team-${partidaId}-${equipoNumero}`).emit('drawingAction', {
-        type: 'clear',
-        userId
-      });
-
-      // Enviar tinta actualizada solo al usuario que borró
-      socket.emit('drawingGameState', {
-        actions: []
-      });
-      return;
-    }
+      if (action.isLocalReset) {
+        // SOLO actualiza el estado del usuario que limpió
+        drawingGames[gameId].tintaStates[userId] = MAX_TINTA;
+        delete drawingGames[gameId].actions[userId];
+        
+        // Notificar SOLO al usuario que limpió
+        io.to(socket.id).emit('tintaUpdate', {
+          userId,
+          tinta: MAX_TINTA
+        });
+      } else {
+        // Comportamiento anterior (por si acaso)
+        delete drawingGames[gameId].actions[userId];
+        drawingGames[gameId].tintaStates[userId] = 5000;
+        socket.to(`team-${partidaId}-${equipoNumero}`).emit('drawingAction', {
+          type: 'clear',
+          userId
+        });
+      }
+      return; // Salir temprano para no emitir a todos
   }
 
   // Para otras acciones (dibujo)
