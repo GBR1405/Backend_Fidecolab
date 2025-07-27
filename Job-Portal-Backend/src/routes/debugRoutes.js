@@ -29,4 +29,17 @@ router.get('/usuarios_D', authMiddleware, roleMiddleware(["Administrador"]), get
 router.get('/bitacora_D', authMiddleware, roleMiddleware(["Administrador"]), getFullBitacora);
 router.get('/logros_D', authMiddleware, roleMiddleware(["Administrador"]), getAllAchievementLogs);
 
+router.get('/usuarios_D/:userId/grupos', authMiddleware, roleMiddleware(["Administrador"]), obtenerGruposUsuario);
+router.delete('/usuarios_D/:userId/grupos/:grupoId', authMiddleware, roleMiddleware(["Administrador"]), desvincularGrupoUsuario);
+router.post('/usuarios_D/:userId/grupos/:grupoId', authMiddleware, roleMiddleware(["Administrador"]), agregarGrupoUsuario);
+router.delete('/grupos_D/:grupoId/usuarios', authMiddleware, roleMiddleware(["Administrador"]), desvincularUsuariosGrupo);
+router.get('/grupos_D/usuarios', authMiddleware, roleMiddleware(["Administrador"]), obtenerGruposConUsuarios);
+router.get('/grupos_D', authMiddleware, roleMiddleware(["Administrador"]), obtenerTodosGrupos);
+
+router.delete('/profesores_D/:profesorId/personalizaciones', authMiddleware, roleMiddleware(["Administrador"]), eliminarPersonalizacionesProfesor);
+router.delete('/profesores_D/:profesorId/partidas', authMiddleware, roleMiddleware(["Administrador"]), eliminarPartidasProfesor);
+router.delete('/estudiantes_D/:estudianteId/logros', authMiddleware, roleMiddleware(["Administrador"]), reiniciarLogrosEstudiante);
+
+
+
 export default router;

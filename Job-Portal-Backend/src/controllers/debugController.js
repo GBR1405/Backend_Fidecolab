@@ -1277,3 +1277,616 @@ export const getAllAchievementLogs = async (req, res) => {
     });
   }
 };
+
+/**
+ * Obtener todos los grupos vinculados a un usuario
+ */
+export const obtenerGruposUsuario = async (req, res) => {
+  const { userId } = req.params;
+
+  try {
+    const pool = await poolPromise;
+
+    const result = await pool.request()
+      .input("userId", sql.Int, userId)
+      .query(`
+        SELECT 
+          gc.GrupoCurso_ID_PK as id,
+          cc.Codigo_Curso as codigo,
+          cc.Nombre_Curso as nombre,
+          gc.Codigo_Grupo as grupo
+        FROM GrupoVinculado_TB gv
+        JOIN GrupoCurso_TB gc ON gv.GrupoCurso_ID_FK = gc.GrupoCurso_ID_PK
+        JOIN CodigoCurso_TB cc ON gc.Curso_ID_FK = cc.CodigoCurso_ID_PK
+        WHERE gv.Usuario_ID_FK = @userId
+        ORDER BY cc.Nombre_Curso, gc.Codigo_Grupo
+      `);
+
+    // Formatear el nombre del grupo como [Codigo]-[nombre] G[Numero]
+    const grupos = result.recordset.map(grupo => ({
+      id: grupo.id,
+      nombreCompleto: `${grupo.codigo}-${grupo.nombre} G${grupo.grupo}`,
+      ...grupo
+    }));
+
+    await GenerarBitacora(req.user.id, "Grupos de usuario consultados en modo debug", null);
+
+    return res.status(200).json({
+      success: true,
+      count: grupos.length,
+      grupos
+    });
+
+  } catch (error) {
+    console.error("Error al obtener grupos del usuario:", error);
+    return res.status(500).json({ 
+      success: false, 
+      message: "Error al obtener grupos del usuario",
+      error: error.message 
+    });
+  }
+};
+
+/**
+ * Desvincular un grupo de un usuario
+ */
+export const desvincularGrupoUsuario = async (req, res) => {
+  const { userId, grupoId } = req.params;
+
+  try {
+    const pool = await poolPromise;
+
+    // Verificar que la vinculación existe
+    const vinculacionCheck = await pool.request()
+      .input("userId", sql.Int, userId)
+      .input("grupoId", sql.Int, grupoId)
+      .query("SELECT * FROM GrupoVinculado_TB WHERE Usuario_ID_FK = @userId AND GrupoCurso_ID_FK = @grupoId");
+
+    if (vinculacionCheck.recordset.length === 0) {
+      return res.status(404).json({ 
+        success: false, 
+        message: "Vinculación no encontrada" 
+      });
+    }
+
+    // Eliminar la vinculación
+    await pool.request()
+      .input("userId", sql.Int, userId)
+      .input("grupoId", sql.Int, grupoId)
+      .query("DELETE FROM GrupoVinculado_TB WHERE Usuario_ID_FK = @userId AND GrupoCurso_ID_FK = @grupoId");
+
+    await GenerarBitacora(req.user.id, "Grupo desvinculado de usuario en modo debug", null);
+
+    return res.status(200).json({
+      success: true,
+      message: "Grupo desvinculado exitosamente"
+    });
+
+  } catch (error) {
+    console.error("Error al desvincular grupo:", error);
+    return res.status(500).json({ 
+      success: false, 
+      message: "Error al desvincular grupo",
+      error: error.message 
+    });
+  }
+};
+
+/**
+ * Vincular un grupo a un usuario
+ */
+export const agregarGrupoUsuario = async (req, res) => {
+  const { userId, grupoId } = req.params;
+
+  try {
+    const pool = await poolPromise;
+
+    // Verificar que el usuario existe
+    const userCheck = await pool.request()
+      .input("userId", sql.Int, userId)
+      .query(`
+        SELECT u.Usuario_ID_PK, r.Rol 
+        FROM Usuario_TB u
+        JOIN Rol_TB r ON u.Rol_ID_FK = r.Rol_ID_PK
+        WHERE u.Usuario_ID_PK = @userId
+      `);
+
+    if (userCheck.recordset.length === 0) {
+      return res.status(404).json({ 
+        success: false, 
+        message: "Usuario no encontrado" 
+      });
+    }
+
+    const user = userCheck.recordset[0];
+    const userRole = user.Rol;
+
+    // Verificar que el grupo existe
+    const grupoCheck = await pool.request()
+      .input("grupoId", sql.Int, grupoId)
+      .query("SELECT * FROM GrupoCurso_TB WHERE GrupoCurso_ID_PK = @grupoId");
+
+    if (grupoCheck.recordset.length === 0) {
+      return res.status(404).json({ 
+        success: false, 
+        message: "Grupo no encontrado" 
+      });
+    }
+
+    // Verificar que no esté ya vinculado
+    const vinculacionCheck = await pool.request()
+      .input("userId", sql.Int, userId)
+      .input("grupoId", sql.Int, grupoId)
+      .query("SELECT * FROM GrupoVinculado_TB WHERE Usuario_ID_FK = @userId AND GrupoCurso_ID_FK = @grupoId");
+
+    if (vinculacionCheck.recordset.length > 0) {
+      return res.status(400).json({ 
+        success: false, 
+        message: "El usuario ya está vinculado a este grupo" 
+      });
+    }
+
+    // Si el usuario es profesor, verificar que no haya otro profesor en el grupo
+    if (userRole === 'Profesor') {
+      const profesorEnGrupoCheck = await pool.request()
+        .input("grupoId", sql.Int, grupoId)
+        .query(`
+          SELECT u.Usuario_ID_PK 
+          FROM GrupoVinculado_TB gv
+          JOIN Usuario_TB u ON gv.Usuario_ID_FK = u.Usuario_ID_PK
+          JOIN Rol_TB r ON u.Rol_ID_FK = r.Rol_ID_PK
+          WHERE gv.GrupoCurso_ID_FK = @grupoId AND r.Rol = 'Profesor'
+        `);
+
+      if (profesorEnGrupoCheck.recordset.length > 0) {
+        return res.status(400).json({ 
+          success: false, 
+          message: "Ya existe un profesor vinculado a este grupo" 
+        });
+      }
+    }
+
+    // Crear la vinculación
+    await pool.request()
+      .input("userId", sql.Int, userId)
+      .input("grupoId", sql.Int, grupoId)
+      .query(`
+        INSERT INTO GrupoVinculado_TB (Usuario_ID_FK, GrupoCurso_ID_FK)
+        VALUES (@userId, @grupoId)
+      `);
+
+    await GenerarBitacora(req.user.id, "Grupo vinculado a usuario en modo debug", null);
+
+    return res.status(201).json({
+      success: true,
+      message: "Grupo vinculado exitosamente"
+    });
+
+  } catch (error) {
+    console.error("Error al vincular grupo:", error);
+    return res.status(500).json({ 
+      success: false, 
+      message: "Error al vincular grupo",
+      error: error.message 
+    });
+  }
+};
+
+/**
+ * Desvincular todos los usuarios de un grupo
+ */
+export const desvincularUsuariosGrupo = async (req, res) => {
+  const { grupoId } = req.params;
+
+  try {
+    const pool = await poolPromise;
+
+    // Verificar que el grupo existe
+    const grupoCheck = await pool.request()
+      .input("grupoId", sql.Int, grupoId)
+      .query("SELECT * FROM GrupoCurso_TB WHERE GrupoCurso_ID_PK = @grupoId");
+
+    if (grupoCheck.recordset.length === 0) {
+      return res.status(404).json({ 
+        success: false, 
+        message: "Grupo no encontrado" 
+      });
+    }
+
+    // Obtener cantidad de vinculaciones a eliminar
+    const countResult = await pool.request()
+      .input("grupoId", sql.Int, grupoId)
+      .query("SELECT COUNT(*) as total FROM GrupoVinculado_TB WHERE GrupoCurso_ID_FK = @grupoId");
+
+    const totalVinculaciones = countResult.recordset[0].total;
+
+    // Eliminar todas las vinculaciones
+    await pool.request()
+      .input("grupoId", sql.Int, grupoId)
+      .query("DELETE FROM GrupoVinculado_TB WHERE GrupoCurso_ID_FK = @grupoId");
+
+    await GenerarBitacora(req.user.id, `Todos los usuarios desvinculados del grupo ${grupoId} en modo debug`, null);
+
+    return res.status(200).json({
+      success: true,
+      message: `${totalVinculaciones} usuarios desvinculados del grupo exitosamente`
+    });
+
+  } catch (error) {
+    console.error("Error al desvincular usuarios del grupo:", error);
+    return res.status(500).json({ 
+      success: false, 
+      message: "Error al desvincular usuarios del grupo",
+      error: error.message 
+    });
+  }
+};
+
+/**
+ * Obtener todos los grupos con sus usuarios vinculados
+ */
+export const obtenerGruposConUsuarios = async (req, res) => {
+  try {
+    const pool = await poolPromise;
+
+    // Obtener todos los grupos distintos
+    const gruposResult = await pool.request().query(`
+      SELECT DISTINCT
+        gc.GrupoCurso_ID_PK as id,
+        cc.Codigo_Curso as codigo,
+        cc.Nombre_Curso as nombre,
+        gc.Codigo_Grupo as grupo
+      FROM GrupoVinculado_TB gv
+      JOIN GrupoCurso_TB gc ON gv.GrupoCurso_ID_FK = gc.GrupoCurso_ID_PK
+      JOIN CodigoCurso_TB cc ON gc.Curso_ID_FK = cc.CodigoCurso_ID_PK
+      ORDER BY cc.Nombre_Curso, gc.Codigo_Grupo
+    `);
+
+    // Para cada grupo, obtener los usuarios vinculados
+    const gruposConUsuarios = await Promise.all(gruposResult.recordset.map(async grupo => {
+      const usuariosResult = await pool.request()
+        .input("grupoId", sql.Int, grupo.id)
+        .query(`
+          SELECT 
+            u.Usuario_ID_PK as id,
+            u.Nombre,
+            u.Apellido1,
+            u.Apellido2,
+            u.Correo,
+            r.Rol
+          FROM GrupoVinculado_TB gv
+          JOIN Usuario_TB u ON gv.Usuario_ID_FK = u.Usuario_ID_PK
+          JOIN Rol_TB r ON u.Rol_ID_FK = r.Rol_ID_PK
+          WHERE gv.GrupoCurso_ID_FK = @grupoId
+          ORDER BY u.Nombre, u.Apellido1
+        `);
+
+      return {
+        ...grupo,
+        nombreCompleto: `${grupo.codigo}-${grupo.nombre} G${grupo.grupo}`,
+        usuarios: usuariosResult.recordset,
+        totalUsuarios: usuariosResult.recordset.length
+      };
+    }));
+
+    await GenerarBitacora(req.user.id, "Grupos con usuarios consultados en modo debug", null);
+
+    return res.status(200).json({
+      success: true,
+      count: gruposConUsuarios.length,
+      grupos: gruposConUsuarios
+    });
+
+  } catch (error) {
+    console.error("Error al obtener grupos con usuarios:", error);
+    return res.status(500).json({ 
+      success: false, 
+      message: "Error al obtener grupos con usuarios",
+      error: error.message 
+    });
+  }
+};
+
+/**
+ * Eliminar todas las personalizaciones de un profesor y sus dependencias
+ */
+export const eliminarPersonalizacionesProfesor = async (req, res) => {
+  const { profesorId } = req.params;
+
+  try {
+    const pool = await poolPromise;
+
+    // Verificar que el usuario es profesor
+    const profesorCheck = await pool.request()
+      .input("profesorId", sql.Int, profesorId)
+      .query(`
+        SELECT u.Usuario_ID_PK, r.Rol 
+        FROM Usuario_TB u
+        JOIN Rol_TB r ON u.Rol_ID_FK = r.Rol_ID_PK
+        WHERE u.Usuario_ID_PK = @profesorId AND r.Rol = 'Profesor'
+      `);
+
+    if (profesorCheck.recordset.length === 0) {
+      return res.status(404).json({ 
+        success: false, 
+        message: "Profesor no encontrado o no es un profesor" 
+      });
+    }
+
+    // Iniciar transacción
+    const transaction = new sql.Transaction(await pool.connect());
+    await transaction.begin();
+
+    try {
+      // 1. Obtener todas las personalizaciones del profesor
+      const personalizacionesResult = await transaction.request()
+        .input("profesorId", sql.Int, profesorId)
+        .query("SELECT Personalizacion_ID_PK FROM Personalizacion_TB WHERE Usuario_ID_FK = @profesorId");
+
+      const personalizacionesIds = personalizacionesResult.recordset.map(p => p.Personalizacion_ID_PK);
+
+      if (personalizacionesIds.length > 0) {
+        // 2. Obtener partidas vinculadas a estas personalizaciones
+        const partidasResult = await transaction.request()
+          .query(`
+            SELECT Partida_ID_PK 
+            FROM Partida_TB 
+            WHERE Personalizacion_ID_FK IN (${personalizacionesIds.join(",")})
+          `);
+
+        const partidasIds = partidasResult.recordset.map(p => p.Partida_ID_PK);
+
+        if (partidasIds.length > 0) {
+          // 3. Eliminar participantes de esas partidas
+          await transaction.request()
+            .query(`
+              DELETE FROM Participantes_TB 
+              WHERE Partida_ID_FK IN (${partidasIds.join(",")})
+            `);
+
+          // 4. Eliminar resultados de esas partidas
+          await transaction.request()
+            .query(`
+              DELETE FROM Resultados_TB 
+              WHERE Partida_ID_FK IN (${partidasIds.join(",")})
+            `);
+
+          // 5. Eliminar logros de esas partidas
+          await transaction.request()
+            .query(`
+              DELETE FROM Usuario_Logros_TB 
+              WHERE Partida_ID_FK IN (${partidasIds.join(",")})
+            `);
+        }
+
+        // 6. Eliminar las partidas vinculadas
+        await transaction.request()
+          .query(`
+            DELETE FROM Partida_TB 
+            WHERE Personalizacion_ID_FK IN (${personalizacionesIds.join(",")})
+          `);
+
+        // 7. Eliminar configuraciones de juego
+        await transaction.request()
+          .query(`
+            DELETE FROM ConfiguracionJuego_TB 
+            WHERE Personalizacion_ID_PK IN (${personalizacionesIds.join(",")})
+          `);
+      }
+
+      // 8. Eliminar las personalizaciones
+      await transaction.request()
+        .input("profesorId", sql.Int, profesorId)
+        .query("DELETE FROM Personalizacion_TB WHERE Usuario_ID_FK = @profesorId");
+
+      await transaction.commit();
+
+      await GenerarBitacora(req.user.id, `Personalizaciones del profesor ${profesorId} eliminadas en modo debug`, null);
+
+      return res.status(200).json({
+        success: true,
+        message: `Todas las personalizaciones del profesor (${personalizacionesIds.length}) y sus dependencias eliminadas exitosamente`
+      });
+
+    } catch (error) {
+      await transaction.rollback();
+      throw error;
+    }
+
+  } catch (error) {
+    console.error("Error al eliminar personalizaciones del profesor:", error);
+    return res.status(500).json({ 
+      success: false, 
+      message: "Error al eliminar personalizaciones del profesor",
+      error: error.message 
+    });
+  }
+};
+
+/**
+ * Eliminar todas las partidas de un profesor y sus dependencias
+ */
+export const eliminarPartidasProfesor = async (req, res) => {
+  const { profesorId } = req.params;
+
+  try {
+    const pool = await poolPromise;
+
+    // Verificar que el usuario es profesor
+    const profesorCheck = await pool.request()
+      .input("profesorId", sql.Int, profesorId)
+      .query(`
+        SELECT u.Usuario_ID_PK, r.Rol 
+        FROM Usuario_TB u
+        JOIN Rol_TB r ON u.Rol_ID_FK = r.Rol_ID_PK
+        WHERE u.Usuario_ID_PK = @profesorId AND r.Rol = 'Profesor'
+      `);
+
+    if (profesorCheck.recordset.length === 0) {
+      return res.status(404).json({ 
+        success: false, 
+        message: "Profesor no encontrado o no es un profesor" 
+      });
+    }
+
+    // Iniciar transacción
+    const transaction = new sql.Transaction(await pool.connect());
+    await transaction.begin();
+
+    try {
+      // 1. Obtener todas las partidas del profesor
+      const partidasResult = await transaction.request()
+        .input("profesorId", sql.Int, profesorId)
+        .query("SELECT Partida_ID_PK FROM Partida_TB WHERE Profesor_ID_FK = @profesorId");
+
+      const partidasIds = partidasResult.recordset.map(p => p.Partida_ID_PK);
+
+      if (partidasIds.length > 0) {
+        // 2. Eliminar participantes de esas partidas
+        await transaction.request()
+          .query(`
+            DELETE FROM Participantes_TB 
+            WHERE Partida_ID_FK IN (${partidasIds.join(",")})
+          `);
+
+        // 3. Eliminar resultados de esas partidas
+        await transaction.request()
+          .query(`
+            DELETE FROM Resultados_TB 
+            WHERE Partida_ID_FK IN (${partidasIds.join(",")})
+          `);
+
+        // 4. Eliminar logros de esas partidas
+        await transaction.request()
+          .query(`
+            DELETE FROM Usuario_Logros_TB 
+            WHERE Partida_ID_FK IN (${partidasIds.join(",")})
+          `);
+      }
+
+      // 5. Eliminar las partidas
+      await transaction.request()
+        .input("profesorId", sql.Int, profesorId)
+        .query("DELETE FROM Partida_TB WHERE Profesor_ID_FK = @profesorId");
+
+      await transaction.commit();
+
+      await GenerarBitacora(req.user.id, `Partidas del profesor ${profesorId} eliminadas en modo debug`, null);
+
+      return res.status(200).json({
+        success: true,
+        message: `Todas las partidas del profesor (${partidasIds.length}) y sus dependencias eliminadas exitosamente`
+      });
+
+    } catch (error) {
+      await transaction.rollback();
+      throw error;
+    }
+
+  } catch (error) {
+    console.error("Error al eliminar partidas del profesor:", error);
+    return res.status(500).json({ 
+      success: false, 
+      message: "Error al eliminar partidas del profesor",
+      error: error.message 
+    });
+  }
+};
+
+/**
+ * Eliminar todos los logros de un estudiante
+ */
+export const reiniciarLogrosEstudiante = async (req, res) => {
+  const { estudianteId } = req.params;
+
+  try {
+    const pool = await poolPromise;
+
+    // Verificar que el usuario es estudiante
+    const estudianteCheck = await pool.request()
+      .input("estudianteId", sql.Int, estudianteId)
+      .query(`
+        SELECT u.Usuario_ID_PK, r.Rol 
+        FROM Usuario_TB u
+        JOIN Rol_TB r ON u.Rol_ID_FK = r.Rol_ID_PK
+        WHERE u.Usuario_ID_PK = @estudianteId AND r.Rol = 'Estudiante'
+      `);
+
+    if (estudianteCheck.recordset.length === 0) {
+      return res.status(404).json({ 
+        success: false, 
+        message: "Estudiante no encontrado o no es un estudiante" 
+      });
+    }
+
+    // Eliminar todos los logros del estudiante
+    const result = await pool.request()
+      .input("estudianteId", sql.Int, estudianteId)
+      .query("DELETE FROM Usuario_Logros_TB WHERE Usuario_ID_FK = @estudianteId");
+
+    await GenerarBitacora(req.user.id, `Logros del estudiante ${estudianteId} reiniciados en modo debug`, null);
+
+    return res.status(200).json({
+      success: true,
+      message: "Todos los logros del estudiante han sido eliminados exitosamente",
+      affectedRows: result.rowsAffected[0]
+    });
+
+  } catch (error) {
+    console.error("Error al reiniciar logros del estudiante:", error);
+    return res.status(500).json({ 
+      success: false, 
+      message: "Error al reiniciar logros del estudiante",
+      error: error.message 
+    });
+  }
+};
+
+/**
+ * Obtener todos los grupos del sistema
+ */
+export const obtenerTodosGrupos = async (req, res) => {
+  try {
+    const pool = await poolPromise;
+
+    const result = await pool.request().query(`
+      SELECT 
+        gc.GrupoCurso_ID_PK as id,
+        cc.Codigo_Curso as codigo,
+        cc.Nombre_Curso as nombre,
+        gc.Codigo_Grupo as grupo,
+        COUNT(gv.Usuario_ID_FK) as total_usuarios
+      FROM GrupoCurso_TB gc
+      JOIN CodigoCurso_TB cc ON gc.Curso_ID_FK = cc.CodigoCurso_ID_PK
+      LEFT JOIN GrupoVinculado_TB gv ON gc.GrupoCurso_ID_PK = gv.GrupoCurso_ID_FK
+      GROUP BY 
+        gc.GrupoCurso_ID_PK, 
+        cc.Codigo_Curso, 
+        cc.Nombre_Curso, 
+        gc.Codigo_Grupo
+      ORDER BY cc.Nombre_Curso, gc.Codigo_Grupo
+    `);
+
+    // Formatear el nombre del grupo como [Codigo]-[nombre] G[Numero]
+    const grupos = result.recordset.map(grupo => ({
+      ...grupo,
+      nombreCompleto: `${grupo.codigo}-${grupo.nombre} G${grupo.grupo}`
+    }));
+
+    await GenerarBitacora(req.user.id, "Todos los grupos consultados en modo debug", null);
+
+    return res.status(200).json({
+      success: true,
+      count: grupos.length,
+      grupos
+    });
+
+  } catch (error) {
+    console.error("Error al obtener todos los grupos:", error);
+    return res.status(500).json({ 
+      success: false, 
+      message: "Error al obtener todos los grupos",
+      error: error.message 
+    });
+  }
+};
