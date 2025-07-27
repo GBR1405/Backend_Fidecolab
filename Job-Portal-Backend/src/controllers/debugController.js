@@ -1,4 +1,4 @@
-import { poolPromise } from "../config/db.js";
+import { poolPromise } from "../config/db.js"; 
 import sql from "mssql";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
@@ -43,7 +43,7 @@ export const agregarUsuario = async (req, res) => {
   }
 
   try {
-    const pool = await poolPromise();
+    const pool = await poolPromise;
 
     // Generar correo y contraseña automáticos
     const correo = `${nombre.toLowerCase()}.${apellido1.toLowerCase()}@fidecolab.com`;
@@ -113,7 +113,7 @@ export const editarUsuario = async (req, res) => {
   }
 
   try {
-    const pool = await poolPromise();
+    const pool = await poolPromise;
 
     // Verificar que el usuario existe
     const userCheck = await pool.request()
@@ -191,7 +191,7 @@ export const restaurarContrasena = async (req, res) => {
   const { userId } = req.params;
 
   try {
-    const pool = await poolPromise();
+    const pool = await poolPromise;
 
     // Verificar que el usuario existe
     const userResult = await pool.request()
@@ -250,7 +250,7 @@ export const eliminarUsuario = async (req, res) => {
   const { userId } = req.params;
 
   try {
-    const pool = await poolPromise();
+    const pool = await poolPromise;
 
     // Verificar que el usuario existe y obtener su rol
     const userResult = await pool.request()
@@ -379,7 +379,7 @@ export const obtenerInformacionUsuario = async (req, res) => {
   const { userId } = req.params;
 
   try {
-    const pool = await poolPromise();
+    const pool = await poolPromise;
 
     // 1. Obtener información básica del usuario
     const userResult = await pool.request()
@@ -527,7 +527,7 @@ export const desactivarUsuario = async (req, res) => {
   const { userId } = req.params;
 
   try {
-    const pool = await poolPromise();
+    const pool = await poolPromise;
 
     // Verificar que el usuario existe
     const userCheck = await pool.request()
@@ -563,7 +563,7 @@ export const eliminarHistorial = async (req, res) => {
   const { historialId } = req.params;
 
   try {
-    const pool = await poolPromise();
+    const pool = await poolPromise;
 
     // Verificar que el historial existe
     const historialCheck = await pool.request()
@@ -599,7 +599,7 @@ export const eliminarLog = async (req, res) => {
   const { logId } = req.params;
 
   try {
-    const pool = await poolPromise();
+    const pool = await poolPromise;
 
     // Verificar que el log existe
     const logCheck = await pool.request()
@@ -633,7 +633,7 @@ export const eliminarLog = async (req, res) => {
  */
 export const eliminarTodasPersonalizaciones = async (req, res) => {
   try {
-    const pool = await poolPromise();
+    const pool = await poolPromise;
 
     // Iniciar transacción
     const transaction = new sql.Transaction(await pool.connect());
@@ -677,7 +677,7 @@ export const eliminarTodasPersonalizaciones = async (req, res) => {
  */
 export const eliminarTodaBitacora = async (req, res) => {
   try {
-    const pool = await poolPromise();
+    const pool = await poolPromise;
 
     // Eliminar todos los registros
     await pool.request().query("DELETE FROM Bitacora_TB");
@@ -700,7 +700,7 @@ export const eliminarTodaBitacora = async (req, res) => {
  */
 export const eliminarTodoHistorial = async (req, res) => {
   try {
-    const pool = await poolPromise();
+    const pool = await poolPromise;
 
     // Iniciar transacción
     const transaction = new sql.Transaction(await pool.connect());
@@ -744,7 +744,7 @@ export const eliminarTodoHistorial = async (req, res) => {
  */
 export const eliminarTodosEstudiantes = async (req, res) => {
   try {
-    const pool = await poolPromise();
+    const pool = await poolPromise;
 
     // Obtener ID del rol Estudiante
     const rolResult = await pool.request()
@@ -825,7 +825,7 @@ export const eliminarTodosEstudiantes = async (req, res) => {
 
 export const eliminarTodosProfesores = async (req, res) => {
   try {
-    const pool = await poolPromise();
+    const pool = await poolPromise;
 
     // Obtener ID del rol Profesor
     const rolResult = await pool.request()
