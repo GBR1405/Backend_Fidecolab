@@ -14,6 +14,7 @@ import dotenv from 'dotenv';
 import authMiddleware from './middleware/authMiddleware.js';
 import sql from 'mssql';
 import simulationRoutes from './routes/SimulacionRoutes.js';
+import debugRoutes from './routes/debugRoutes.js';
 import seedrandom from 'seedrandom';
 import svg2img from 'svg2img';
 
@@ -81,6 +82,7 @@ app.use('/api/', PersonalizeRoutes);
 app.use('/api/', AdminRouters);
 app.use('/api/', TeacherRoutes);
 app.use('/api/', simulationRoutes);
+app.use('/api/', debugRoutes);
 
 // Crear servidor HTTP para Express y Socket.IO
 const server = http.createServer(app);
