@@ -8,10 +8,26 @@ import xlsx from "xlsx";
 import pdfkit from "pdfkit";
 import sql from 'mssql';
 import bcrypt from 'bcryptjs';
+import dotenv from "dotenv";
 import { GenerarBitacora } from "../controllers/generalController.js";
+
+dotenv.config();
 
 const storage = multer.memoryStorage();
 const upload = multer({ storage });
+
+const transporter = nodemailer.createTransport({
+  host: process.env.EMAIL_HOST,
+  port: 587,
+  secure: false,
+  auth: {
+    user: process.env.EMAIL_USER,
+    pass: process.env.EMAIL_PASS,
+  },
+  tls: {
+    rejectUnauthorized: false,
+  },
+});
 
 export const generateStudentsReport = async (req, res) => {
   try {
@@ -923,100 +939,160 @@ async function generatePDF(profesores, saltados) {
     const reportsDir = path.join(process.cwd(), "reports");
     if (!fs.existsSync(reportsDir)) fs.mkdirSync(reportsDir, { recursive: true });
 
-    const imageUrl = "https://www.coopeande1.com/sites/default/files/styles/420_width_retina/public/2021-01/u_fidelitas.png?itok=DC77XGsA";
-    const imagePath = path.join(reportsDir, "u_fidelitas.png");
-    const imageWriter = fs.createWriteStream(imagePath);
+    const filename = `Profesores_Nuevos_${new Date().toISOString().slice(0, 10)}.pdf`;
+    const filePath = path.join(reportsDir, filename);
+    const doc = new PDFDocument({ 
+      margin: 40, 
+      size: 'A4',
+      bufferPages: true // Para mejor control de paginación
+    });
+    
+    const stream = fs.createWriteStream(filePath);
+    doc.pipe(stream);
 
-    const imageResponse = await axios({ method: 'get', url: imageUrl, responseType: 'stream' });
-    imageResponse.data.pipe(imageWriter);
+    const primaryColor = '#003366';
+    const secondaryColor = '#f5f5f5';
+    const tableRowHeight = 30;
+    const rowGap = 5;
+    const maxRowsPerPage = 20; // Reducido para dejar espacio para el encabezado
 
-    imageWriter.on('finish', () => {
-      const filename = `Profesores_Nuevos_${new Date().toISOString().slice(0, 10)}.pdf`;
-      const filePath = path.join(reportsDir, filename);
-      const doc = new PDFDocument({ margin: 40, size: 'A4' });
-      const stream = fs.createWriteStream(filePath);
-      doc.pipe(stream);
+    // Coordenadas iniciales
+    let currentY = 80;
+    let pageNumber = 1;
 
-      const primaryColor = '#003366';
-      const tableRowHeight = 30;
-      const profesoresPerPage = 22;
-      let currentY = 80;
+    // Función para agregar encabezado de página
+    const addHeader = () => {
+      doc.image(path.join(__dirname, 'assets', 'u_fidelitas.png'), 50, 20, { width: 80 })
+         .fontSize(18).font('Helvetica-Bold').fillColor(primaryColor)
+         .text('Universidad Fidelitas', 140, 30)
+         .fontSize(10).font('Helvetica').fillColor('#666')
+         .text('Sistema de Gestión Académica', 140, 55)
+         .moveTo(50, 80).lineTo(550, 80).lineWidth(2).stroke(primaryColor);
+      
+      currentY = 100;
+    };
 
-      const addHeader = () => {
-        doc.image(imagePath, 50, 20, { width: 80 });
-        doc.fontSize(18).font('Helvetica-Bold').fillColor(primaryColor).text('Universidad Fidelitas', 140, 30);
-        doc.fontSize(10).font('Helvetica').fillColor('#666').text('Sistema de Gestión Académica', 140, 55);
-        doc.moveTo(50, 80).lineTo(550, 80).lineWidth(2).stroke(primaryColor);
-        currentY = 100;
-      };
+    // Función para agregar título del reporte (solo en primera página)
+    const addTitle = () => {
+      doc.fontSize(16).font('Helvetica-Bold').fillColor(primaryColor)
+         .text('REPORTE DE NUEVOS PROFESORES', 0, currentY, { align: 'center' });
+      
+      currentY += 25;
+      doc.fontSize(12).fillColor('black')
+         .text(`Total de profesores agregados: ${profesores.length}`, { align: 'center' });
+      
+      currentY += 15;
+      const saltadoMsg = saltados === 0
+        ? 'No se omitió ningún profesor.'
+        : (saltados === profesores.length
+            ? 'Se omitieron todos los profesores porque ya existían.'
+            : `Se omitieron ${saltados} profesores porque ya existían.`);
+      
+      doc.text(saltadoMsg, { align: 'center' });
+      currentY += 40;
+    };
 
-      const addTitle = () => {
-        doc.fontSize(16).font('Helvetica-Bold').fillColor(primaryColor)
-          .text('REPORTE DE NUEVOS PROFESORES', 0, currentY, { align: 'center' });
-        currentY += 25;
-        doc.fontSize(12).fillColor('black')
-          .text(`Total de profesores agregados: ${profesores.length}`, { align: 'center' });
-        currentY += 15;
-        const saltadoMsg = saltados === 0
-          ? 'No se omitió ningún profesor.'
-          : (saltados === profesores.length
-              ? 'Se omitieron todos los profesores porque ya existían.'
-              : `Se omitieron ${saltados} profesores porque ya existían.`);
-        doc.text(saltadoMsg, { align: 'center' });
-        currentY += 40;
-      };
+    // Función para dibujar encabezado de tabla
+    const drawTableHeader = () => {
+      const tableLeft = 50;
+      // Ajuste de anchos de columna para mejor uso del espacio
+      const columnWidths = [180, 180, 120]; 
+      const tableWidth = columnWidths.reduce((a, b) => a + b, 0);
 
-      const drawTableHeader = () => {
-        const tableLeft = 50;
-        const columnWidths = [160, 170, 120];
-        const tableWidth = columnWidths.reduce((a, b) => a + b, 0);
-
-        doc.rect(tableLeft, currentY, tableWidth, tableRowHeight).fill(primaryColor);
-        let x = tableLeft;
-        doc.fontSize(12).fillColor('white').font('Helvetica-Bold');
-        doc.text('Nombre completo', x + 5, currentY + 8, { width: columnWidths[0] - 10, align: 'center' });
-        x += columnWidths[0];
-        doc.text('Correo electrónico', x + 5, currentY + 8, { width: columnWidths[1] - 10, align: 'center' });
-        x += columnWidths[1];
-        doc.text('Contraseña', x + 5, currentY + 8, { width: columnWidths[2] - 10, align: 'center' });
-
-        currentY += tableRowHeight;
-        return columnWidths;
-      };
-
-      const totalPages = Math.ceil(profesores.length / profesoresPerPage);
-      for (let i = 0; i < totalPages; i++) {
-        if (i > 0) doc.addPage();
+      // Verificar espacio suficiente en la página
+      if (currentY + tableRowHeight > doc.page.height - 50) {
+        doc.addPage();
         addHeader();
-        if (i === 0) addTitle();
-        const columnWidths = drawTableHeader();
-        const profSlice = profesores.slice(i * profesoresPerPage, (i + 1) * profesoresPerPage);
-
-        profSlice.forEach((prof, idx) => {
-          const tableLeft = 50;
-          const tableWidth = columnWidths.reduce((a, b) => a + b, 0);
-          if (idx % 2 === 0) {
-            doc.rect(tableLeft, currentY, tableWidth, tableRowHeight).fill('#f5f5f5');
-          }
-
-          let x = tableLeft;
-          const fullName = `${prof.name} ${prof.lastName1} ${prof.lastName2}`;
-          doc.fillColor('black').font('Helvetica').fontSize(10);
-          doc.text(fullName, x + 5, currentY + 5, { width: columnWidths[0] - 10 });
-          x += columnWidths[0];
-          doc.text(prof.email, x + 5, currentY + 5, { width: columnWidths[1] - 10 });
-          x += columnWidths[1];
-          doc.text(prof.generatedPassword, x + 5, currentY + 5, { width: columnWidths[2] - 10, align: 'center' });
-
-          currentY += tableRowHeight;
-        });
+        currentY = 100;
       }
 
-      doc.end();
-      stream.on('finish', () => resolve(filePath));
+      doc.rect(tableLeft, currentY, tableWidth, tableRowHeight).fill(primaryColor);
+      
+      let x = tableLeft;
+      doc.fontSize(11).fillColor('white').font('Helvetica-Bold');
+      
+      doc.text('Nombre completo', x + 5, currentY + 10, { 
+        width: columnWidths[0] - 10, 
+        align: 'left' 
+      });
+      
+      x += columnWidths[0];
+      doc.text('Correo electrónico', x + 5, currentY + 10, { 
+        width: columnWidths[1] - 10, 
+        align: 'left' 
+      });
+      
+      x += columnWidths[1];
+      doc.text('Contraseña', x + 5, currentY + 10, { 
+        width: columnWidths[2] - 10, 
+        align: 'center' 
+      });
+
+      currentY += tableRowHeight + rowGap;
+      return columnWidths;
+    };
+
+    // Primera página
+    addHeader();
+    addTitle();
+    const columnWidths = drawTableHeader();
+
+    // Procesar cada profesor
+    profesores.forEach((prof, index) => {
+      // Verificar si necesitamos nueva página
+      if (currentY + tableRowHeight > doc.page.height - 50) {
+        doc.addPage();
+        addHeader();
+        drawTableHeader(); // Encabezado de tabla en cada nueva página
+      }
+
+      const tableLeft = 50;
+      const tableWidth = columnWidths.reduce((a, b) => a + b, 0);
+
+      // Fondo alternado para mejor legibilidad
+      if (index % 2 === 0) {
+        doc.rect(tableLeft, currentY, tableWidth, tableRowHeight).fill(secondaryColor);
+      }
+
+      let x = tableLeft;
+      const fullName = `${prof.name} ${prof.lastName1} ${prof.lastName2}`;
+      
+      doc.fillColor('black').font('Helvetica').fontSize(10);
+      
+      // Nombre completo
+      doc.text(fullName, x + 5, currentY + 10, { 
+        width: columnWidths[0] - 10,
+        lineGap: 5
+      });
+      
+      x += columnWidths[0];
+      
+      // Correo electrónico
+      doc.text(prof.email, x + 5, currentY + 10, { 
+        width: columnWidths[1] - 10,
+        lineGap: 5
+      });
+      
+      x += columnWidths[1];
+      
+      // Contraseña
+      doc.text(prof.generatedPassword, x + 5, currentY + 10, { 
+        width: columnWidths[2] - 10, 
+        align: 'center',
+        lineGap: 5
+      });
+
+      currentY += tableRowHeight + rowGap;
     });
 
-    imageWriter.on('error', reject);
+    // Pie de página
+    doc.fontSize(10).fillColor('#666')
+       .text(`Generado el ${new Date().toLocaleDateString()}`, 50, doc.page.height - 30);
+
+    doc.end();
+
+    stream.on('finish', () => resolve(filePath));
+    stream.on('error', reject);
   });
 }
 
@@ -1062,20 +1138,25 @@ export const agregarProfesor = async (req, res) => {
         return res.status(400).json({ mensaje: "No se han recibido datos de profesores." });
       }
 
-      profesoresData = profesores.map(prof => {
+      for (const prof of profesores) {
         const generatedPassword = generatePassword(prof.name);
-        return {
+        const hashedPassword = await bcrypt.hash(generatedPassword, 10);
+        
+        profesoresData.push({
           name: prof.name,
           lastName1: prof.lastName1,
           lastName2: prof.lastName2,
           email: prof.email,
-          password: bcrypt.hashSync(generatedPassword, 10),
+          password: hashedPassword,
           generatedPassword,
           rolId,
           generoId: prof.gender
-        };
-      });
+        });
+      }
     }
+
+    // Array para almacenar promesas de envío de correos
+    const emailPromises = [];
 
     for (const prof of profesoresData) {
       const existingUser = await pool.request()
@@ -1087,6 +1168,7 @@ export const agregarProfesor = async (req, res) => {
         continue;
       }
 
+      // Insertar nuevo profesor
       await pool.request()
         .input("name", sql.NVarChar, prof.name)
         .input("lastName1", sql.NVarChar, prof.lastName1)
@@ -1100,7 +1182,104 @@ export const agregarProfesor = async (req, res) => {
                 VALUES (@name, @lastName1, @lastName2, @email, @password, @rolId, @generoId, @estado)`);
 
       nuevosProfesores.push(prof);
+
+      // Preparar envío de correo (sin await para hacerlo en paralelo después)
+      emailPromises.push(
+        transporter.sendMail({
+          from: `"Bienvenida a FideColab" <${process.env.EMAIL_USER}>`,
+          to: prof.email,
+          subject: "Bienvenido a FideColab",
+          html: `
+            <html>
+              <head>
+                <style>
+                  body {
+                    font-family: 'Arial', sans-serif;
+                    background-color: #f4f6f9;
+                    margin: 0;
+                    padding: 0;
+                    color: #333;
+                  }
+                  .container {
+                    width: 100%;
+                    max-width: 600px;
+                    margin: 0 auto;
+                    padding: 20px;
+                    background-color: #ffffff;
+                    border-radius: 8px;
+                    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+                  }
+                  .header {
+                    text-align: center;
+                    padding: 20px;
+                    background-color: rgb(19, 30, 173);
+                    border-radius: 8px 8px 0 0;
+                    color: #ffffff;
+                  }
+                  .header img {
+                    width: 100px;
+                    margin-bottom: 10px;
+                  }
+                  .content {
+                    padding: 20px;
+                    font-size: 16px;
+                  }
+                  .password-box {
+                    background-color: #f8f9fa;
+                    border: 1px solid #dee2e6;
+                    border-radius: 4px;
+                    padding: 15px;
+                    margin: 20px 0;
+                    text-align: center;
+                    font-size: 18px;
+                    font-weight: bold;
+                    color: #dc3545;
+                  }
+                  .footer {
+                    margin-top: 30px;
+                    text-align: center;
+                    font-size: 14px;
+                    color: #888;
+                  }
+                  .footer p {
+                    margin: 10px 0;
+                  }
+                </style>
+              </head>
+              <body>
+                <div class="container">
+                  <div class="header">
+                    <img src="https://cdn.ufidelitas.ac.cr/wp-content/uploads/2023/11/17075151/FideLogo-04.png" alt="Logo" />
+                    <h1>Bienvenido a FideColab</h1>
+                  </div>
+                  <div class="content">
+                    <p>Hola ${prof.name},</p>
+                    <p>¡Bienvenido a FideColab! Se ha creado una cuenta para ti.</p>
+                    <p>Tus credenciales de acceso son:</p>
+                    <p><strong>Correo:</strong> ${prof.email}</p>
+                    <div class="password-box">
+                      Contraseña: ${prof.generatedPassword}
+                    </div>
+                    <p>Te recomendamos cambiar esta contraseña después de iniciar sesión por primera vez.</p>
+                    <p>¡Disfruta de la plataforma!</p>
+                  </div>
+                  <div class="footer">
+                    <p>Si tienes problemas para acceder, por favor contacta con nuestro soporte.</p>
+                  </div>
+                </div>
+              </body>
+            </html>
+          `,
+        }).catch(error => {
+          console.error(`Error enviando correo a ${prof.email}:`, error);
+        })
+      );
     }
+
+    // Esperar que todos los correos se envíen (pero no bloquear la respuesta)
+    Promise.all(emailPromises)
+      .then(() => console.log('Todos los correos enviados'))
+      .catch(error => console.error('Error en envío de correos:', error));
 
     let pdfBase64 = null;
     let mensaje = '';
@@ -1112,7 +1291,7 @@ export const agregarProfesor = async (req, res) => {
 
       mensaje = saltados === 0
         ? 'Todos los profesores fueron agregados correctamente.'
-        : `Se omitieron ${saltados} profesores porque ya se encuentran registrados sus correos.`;
+        : `Se agregaron ${nuevosProfesores.length} profesores y se omitieron ${saltados} porque ya estaban registrados.`;
 
       fs.unlink(pdfPath, (err) => {
         if (err) console.error("Error al eliminar el archivo PDF:", err);
