@@ -1895,12 +1895,10 @@ export const obtenerHistorialPartidas = async (req, res) => {
   try {
     const pool = await poolPromise;
 
-    // Obtenemos todas las partidas distintas
     const partidasResult = await pool.request().query(`
-      SELECT DISTINCT
+      SELECT
         p.Partida_ID_PK as id_partida,
-        p.FechaInicio,
-        CONVERT(varchar, p.FechaInicio, 120) as FechaInicioStr,
+        CONVERT(varchar, p.FechaInicio, 120) as fecha,  // Formato ISO8601
         CONCAT(u.Nombre, ' ', u.Apellido1) as profesor,
         cc.Codigo_Curso + '-' + cc.Nombre_Curso + ' G' + CAST(gc.Codigo_Grupo AS NVARCHAR) as curso_grupo,
         (SELECT COUNT(*) FROM Participantes_TB WHERE Partida_ID_FK = p.Partida_ID_PK) as total_estudiantes
@@ -1913,7 +1911,7 @@ export const obtenerHistorialPartidas = async (req, res) => {
 
     const historial = partidasResult.recordset.map(partida => ({
       id: partida.id_partida,
-      fecha: partida.FechaInicio,
+      fecha: partida.fecha, // Usamos el string ISO ya convertido
       profesor: partida.profesor,
       curso: partida.curso_grupo,
       total_estudiantes: partida.total_estudiantes
@@ -1922,7 +1920,6 @@ export const obtenerHistorialPartidas = async (req, res) => {
     await GenerarBitacora(req.user.id, "Historial de partidas consultado en modo debug", null);
 
     return res.status(200).json(historial);
-
   } catch (error) {
     console.error("Error al obtener historial de partidas:", error);
     return res.status(500).json({ 
