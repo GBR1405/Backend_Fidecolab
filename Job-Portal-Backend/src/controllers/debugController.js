@@ -248,6 +248,14 @@ export const restaurarContrasena = async (req, res) => {
  */
 export const eliminarUsuario = async (req, res) => {
   const { userId } = req.params;
+  console.log("Eliminando usuario con ID:", userId);
+
+  if (isNaN(userId)) {
+    return res.status(400).json({ 
+      success: false, 
+      message: "ID de usuario debe ser un número válido" 
+    });
+  }
 
   try {
     const pool = await poolPromise;
