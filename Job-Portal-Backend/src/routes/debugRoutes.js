@@ -30,6 +30,7 @@ router.delete('/profesores_D', authMiddleware, roleMiddleware(["Administrador"])
 router.get('/usuarios_D', authMiddleware, roleMiddleware(["Administrador"]), getAllUsers);
 router.get('/bitacora_D', authMiddleware, roleMiddleware(["Administrador"]), getFullBitacora);
 router.get('/logros_D', authMiddleware, roleMiddleware(["Administrador"]), getAllAchievementLogs);
+router.get('/historial_partidas_D', authMiddleware, roleMiddleware(["Administrador"]), obtenerHistorialPartidas);
 
 router.get('/usuarios_D/:userId/grupos', authMiddleware, roleMiddleware(["Administrador"]), obtenerGruposUsuario);
 router.delete('/usuarios_D/:userId/grupos/:grupoId', authMiddleware, roleMiddleware(["Administrador"]), desvincularGrupoUsuario);
