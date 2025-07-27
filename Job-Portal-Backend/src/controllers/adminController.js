@@ -933,6 +933,49 @@ export const guardarGrupo = async (req, res) => {
   }
 };
 
+const getLogoImage = async () => {
+  const localPath = path.join(process.cwd(), 'assets', 'u_fidelitas.png');
+  
+  if (fs.existsSync(localPath)) {
+    return localPath;
+  }
+
+  try {
+    const imageUrl = "https://www.coopeande1.com/sites/default/files/styles/420_width_retina/public/2021-01/u_fidelitas.png?itok=DC77XGsA";
+    const tempPath = path.join(process.cwd(), 'temp', 'u_fidelitas.png');
+    
+    if (!fs.existsSync(path.dirname(tempPath))) {
+      fs.mkdirSync(path.dirname(tempPath), { recursive: true });
+    }
+
+    const response = await axios({
+      method: 'get',
+      url: imageUrl,
+      responseType: 'stream'
+    });
+
+    await new Promise((resolve, reject) => {
+      const writer = fs.createWriteStream(tempPath);
+      response.data.pipe(writer);
+      writer.on('finish', resolve);
+      writer.on('error', reject);
+    });
+
+    return tempPath;
+  } catch (error) {
+    console.error('Error descargando logo:', error);
+    return null;
+  }
+};
+
+// Luego en tu función:
+const logoPath = await getLogoImage();
+if (logoPath) {
+  doc.image(logoPath, 50, 20, { width: 80 });
+} else {
+  // Dibujar placeholder
+}
+
 async function generatePDF(profesores, saltados) {
   return new Promise(async (resolve, reject) => {
     if (profesores.length === 0) return resolve("");
@@ -945,7 +988,7 @@ async function generatePDF(profesores, saltados) {
     const doc = new PDFDocument({ 
       margin: 40, 
       size: 'A4',
-      bufferPages: true // Para mejor control de paginación
+      bufferPages: true
     });
     
     const stream = fs.createWriteStream(filePath);
@@ -955,16 +998,27 @@ async function generatePDF(profesores, saltados) {
     const secondaryColor = '#f5f5f5';
     const tableRowHeight = 30;
     const rowGap = 5;
-    const maxRowsPerPage = 20; // Reducido para dejar espacio para el encabezado
+    const maxRowsPerPage = 20;
 
-    // Coordenadas iniciales
+    // Obtener el directorio actual (solución para ES modules)
+    const currentDir = process.cwd();
+    const imagePath = path.join(currentDir, 'assets', 'u_fidelitas.png');
+
     let currentY = 80;
     let pageNumber = 1;
 
-    // Función para agregar encabezado de página
     const addHeader = () => {
-      doc.image(path.join(__dirname, 'assets', 'u_fidelitas.png'), 50, 20, { width: 80 })
-         .fontSize(18).font('Helvetica-Bold').fillColor(primaryColor)
+      // Verificar si la imagen existe antes de intentar usarla
+      if (fs.existsSync(imagePath)) {
+        doc.image(imagePath, 50, 20, { width: 80 });
+      } else {
+        console.warn('Logo no encontrado en:', imagePath);
+        // Dibujar un placeholder si la imagen no existe
+        doc.rect(50, 20, 80, 60).fill('#dddddd')
+           .fillColor('#999').text('LOGO', 50, 45, { width: 80, align: 'center' });
+      }
+      
+      doc.fontSize(18).font('Helvetica-Bold').fillColor(primaryColor)
          .text('Universidad Fidelitas', 140, 30)
          .fontSize(10).font('Helvetica').fillColor('#666')
          .text('Sistema de Gestión Académica', 140, 55)
@@ -973,7 +1027,7 @@ async function generatePDF(profesores, saltados) {
       currentY = 100;
     };
 
-    // Función para agregar título del reporte (solo en primera página)
+    // Resto del código permanece igual...
     const addTitle = () => {
       doc.fontSize(16).font('Helvetica-Bold').fillColor(primaryColor)
          .text('REPORTE DE NUEVOS PROFESORES', 0, currentY, { align: 'center' });
@@ -993,14 +1047,11 @@ async function generatePDF(profesores, saltados) {
       currentY += 40;
     };
 
-    // Función para dibujar encabezado de tabla
     const drawTableHeader = () => {
       const tableLeft = 50;
-      // Ajuste de anchos de columna para mejor uso del espacio
       const columnWidths = [180, 180, 120]; 
       const tableWidth = columnWidths.reduce((a, b) => a + b, 0);
 
-      // Verificar espacio suficiente en la página
       if (currentY + tableRowHeight > doc.page.height - 50) {
         doc.addPage();
         addHeader();
@@ -1038,19 +1089,16 @@ async function generatePDF(profesores, saltados) {
     addTitle();
     const columnWidths = drawTableHeader();
 
-    // Procesar cada profesor
     profesores.forEach((prof, index) => {
-      // Verificar si necesitamos nueva página
       if (currentY + tableRowHeight > doc.page.height - 50) {
         doc.addPage();
         addHeader();
-        drawTableHeader(); // Encabezado de tabla en cada nueva página
+        drawTableHeader();
       }
 
       const tableLeft = 50;
       const tableWidth = columnWidths.reduce((a, b) => a + b, 0);
 
-      // Fondo alternado para mejor legibilidad
       if (index % 2 === 0) {
         doc.rect(tableLeft, currentY, tableWidth, tableRowHeight).fill(secondaryColor);
       }
@@ -1060,23 +1108,18 @@ async function generatePDF(profesores, saltados) {
       
       doc.fillColor('black').font('Helvetica').fontSize(10);
       
-      // Nombre completo
       doc.text(fullName, x + 5, currentY + 10, { 
         width: columnWidths[0] - 10,
         lineGap: 5
       });
       
       x += columnWidths[0];
-      
-      // Correo electrónico
       doc.text(prof.email, x + 5, currentY + 10, { 
         width: columnWidths[1] - 10,
         lineGap: 5
       });
       
       x += columnWidths[1];
-      
-      // Contraseña
       doc.text(prof.generatedPassword, x + 5, currentY + 10, { 
         width: columnWidths[2] - 10, 
         align: 'center',
@@ -1086,7 +1129,6 @@ async function generatePDF(profesores, saltados) {
       currentY += tableRowHeight + rowGap;
     });
 
-    // Pie de página
     doc.fontSize(10).fillColor('#666')
        .text(`Generado el ${new Date().toLocaleDateString()}`, 50, doc.page.height - 30);
 
