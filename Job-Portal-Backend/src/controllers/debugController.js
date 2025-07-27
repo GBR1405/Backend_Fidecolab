@@ -1929,3 +1929,113 @@ export const obtenerHistorialPartidas = async (req, res) => {
     });
   }
 };
+
+export const getResultsAdmin = async (req, res) => {
+  const { partidaId } = req.params;
+
+  console.log("🔍 Administrador solicitando resultados para partida:", partidaId);
+
+  try {
+    const pool = await poolPromise;
+
+    // 1. Verificar si la partida existe
+    const partidaQuery = await pool.request()
+      .input('partidaId', sql.Int, partidaId)
+      .query('SELECT * FROM Partida_TB WHERE Partida_ID_PK = @partidaId');
+
+    if (partidaQuery.recordset.length === 0) {
+      console.log(" Partida no encontrada:", partidaId);
+      return res.status(404).json({ message: 'Partida no encontrada' });
+    }
+
+    const partida = partidaQuery.recordset[0];
+    console.log(" Partida encontrada:", partida.Partida_ID_PK);
+
+    // 2. Obtener todos los equipos de la partida
+    const equiposQuery = await pool.request()
+      .input('partidaId', sql.Int, partidaId)
+      .query(`
+        SELECT DISTINCT Equipo 
+        FROM Resultados_TB
+        WHERE Partida_ID_FK = @partidaId
+        ORDER BY Equipo
+      `);
+
+    const equipos = equiposQuery.recordset.map(e => e.Equipo);
+
+    // 3. Obtener miembros por equipo
+    const miembrosPorEquipo = await Promise.all(equipos.map(async equipo => {
+      const miembrosQuery = await pool.request()
+        .input('partidaId', sql.Int, partidaId)
+        .input('equipo', sql.Int, equipo)
+        .query(`
+          SELECT u.Usuario_ID_PK, u.Nombre, u.Apellido1, u.Apellido2
+          FROM Participantes_TB p
+          JOIN Usuario_TB u ON p.Usuario_ID_FK = u.Usuario_ID_PK
+          WHERE p.Partida_ID_FK = @partidaId AND p.Equipo_Numero = @equipo
+        `);
+      return { equipo, miembros: miembrosQuery.recordset };
+    }));
+
+    // 4. Obtener resultados por equipo
+    const resultadosPorEquipo = await Promise.all(equipos.map(async equipo => {
+      const resultadosQuery = await pool.request()
+        .input('partidaId', sql.Int, partidaId)
+        .input('equipo', sql.Int, equipo)
+        .query(`
+          SELECT *
+          FROM Resultados_TB
+          WHERE Partida_ID_FK = @partidaId AND Equipo = @equipo
+        `);
+      return { equipo, resultados: resultadosQuery.recordset };
+    }));
+
+    // 5. Obtener logros por equipo
+    const logrosPorEquipo = {};
+    for (const equipo of equipos) {
+      const userQuery = await pool.request()
+        .input('partidaId', sql.Int, partidaId)
+        .input('equipo', sql.Int, equipo)
+        .query(`
+          SELECT TOP 1 Usuario_ID_FK
+          FROM Participantes_TB
+          WHERE Partida_ID_FK = @partidaId AND Equipo_Numero = @equipo
+        `);
+
+      const usuarioEjemplo = userQuery.recordset[0]?.Usuario_ID_FK;
+
+      if (usuarioEjemplo) {
+        const logrosQuery = await pool.request()
+          .input('userId', sql.Int, usuarioEjemplo)
+          .input('partidaId', sql.Int, partidaId)
+          .query(`
+            SELECT l.*
+            FROM Usuario_Logros_TB ul
+            JOIN Logros_TB l ON ul.Logro_ID_FK = l.Logro_ID_PK
+            WHERE ul.Usuario_ID_FK = @userId
+              AND ul.Partida_ID_FK = @partidaId
+              AND l.Tipo = 'grupo'
+          `);
+        logrosPorEquipo[equipo] = logrosQuery.recordset;
+      } else {
+        logrosPorEquipo[equipo] = [];
+      }
+    }
+
+    console.log("✅ Resultados completos obtenidos para administrador");
+    return res.status(200).json({
+      partida,
+      equipos: miembrosPorEquipo,
+      resultados: resultadosPorEquipo,
+      logros: logrosPorEquipo
+    });
+
+  } catch (error) {
+    console.error("Error al obtener resultados (admin):", error);
+    return res.status(500).json({ 
+      success: false, 
+      message: "Error al obtener resultados",
+      error: error.message 
+    });
+  }
+};
