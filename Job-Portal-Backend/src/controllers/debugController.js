@@ -505,8 +505,9 @@ export const obtenerInformacionUsuario = async (req, res) => {
         FROM Bitacora_TB
         WHERE Usuario_ID_FK = @userId
         ORDER BY Fecha DESC
-        LIMIT 10
-      `);
+        OFFSET 0 ROWS
+        FETCH NEXT 10 ROWS ONLY
+      `)
 
     userInfo.bitacora = bitacoraResult.recordset;
 
