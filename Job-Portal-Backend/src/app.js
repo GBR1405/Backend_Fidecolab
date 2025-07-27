@@ -2005,25 +2005,23 @@ socket.on('drawingAction', ({ partidaId, equipoNumero, userId, action }) => {
     }
 
     case 'clear':
-      // Borrar trazos del usuario
       delete drawingGames[gameId].actions[userId];
-
+      
       // Reiniciar tinta SOLO para ese usuario
       drawingGames[gameId].tintaStates[userId] = 5000;
 
       // Enviar acción de borrado a todos (solo borra trazos visuales)
-      io.to(`team-${partidaId}-${equipoNumero}`).emit('drawingAction', {
+      socket.to(`team-${partidaId}-${equipoNumero}`).emit('drawingAction', {
         type: 'clear',
         userId
       });
 
-      // 🔄 Enviar tinta actualizada solo al usuario que borró
-      io.to(socket.id).emit('drawingGameState', {
+      // Enviar tinta actualizada solo al usuario que borró
+      socket.emit('drawingGameState', {
         actions: [],
         tintaState: { [userId]: 5000 }
       });
-
-      return; // ⚠️ Detener aquí
+      return;
   }
 
   // Para otras acciones (dibujo)
