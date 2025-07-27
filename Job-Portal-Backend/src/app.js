@@ -152,6 +152,10 @@ const lockedPieces = {};
 const drawingDemoState = {};
 
 const MAX_TINTA = 5000;
+const DRAWING_CONFIG = {
+  MAX_INK: 5000,
+  INK_CONSUMPTION_RATE: 1
+};
 
 
 
@@ -1974,78 +1978,101 @@ socket.on('activarDemostracion', (partidaId) => {
 });
 
 
-socket.on('drawingAction', ({ partidaId, equipoNumero, userId, action }) => {
-  const gameId = `drawing-${partidaId}-${equipoNumero}`;
+socket.on('drawingAction', ({ partidaId, equipoNumero, userId, action }, callback) => {
+  try {
+    // Validación básica
+    if (!partidaId || !equipoNumero || !userId || !action) {
+      throw new Error('Datos incompletos');
+    }
 
-  if (!drawingGames[gameId]) {
-    drawingGames[gameId] = {
-      actions: {},
-      tintaStates: {}
-    };
-  }
+    const gameId = `drawing-${partidaId}-${equipoNumero}`;
 
-  if (!drawingGames[gameId].actions[userId]) {
-    drawingGames[gameId].actions[userId] = [];
-  }
+    // Inicialización segura
+    if (!drawingGames[gameId]) {
+      drawingGames[gameId] = {
+        actions: {},
+        inkStates: {},
+        lastReset: {}
+      };
+    }
 
-  switch (action.type) {
-    case 'pathStart':
-      drawingGames[gameId].actions[userId].push(action.path);
-      break;
+    // Registro de actividad para debug
+    console.log(`DrawingAction recibido - User: ${userId}, Tipo: ${action.type}`);
 
-    case 'pathUpdate':
-    case 'pathComplete': {
-      const userActions = drawingGames[gameId].actions[userId];
-      const existingActionIndex = userActions.findIndex(a => a.id === action.path.id);
+    switch (action.type) {
+      case 'pathStart':
+        if (!action.path) throw new Error('Path no definido');
+        
+        if (!drawingGames[gameId].actions[userId]) {
+          drawingGames[gameId].actions[userId] = [];
+        }
+        drawingGames[gameId].actions[userId].push(action.path);
+        break;
 
-      if (existingActionIndex >= 0) {
-        userActions[existingActionIndex] = action.path;
-      } else {
-        userActions.push(action.path);
+      case 'pathUpdate':
+      case 'pathComplete': {
+        if (!action.path?.id) throw new Error('Path inválido');
+        
+        const userActions = drawingGames[gameId].actions[userId] || [];
+        const existingIndex = userActions.findIndex(a => a.id === action.path.id);
+
+        if (existingIndex >= 0) {
+          userActions[existingIndex] = action.path;
+        } else {
+          userActions.push(action.path);
+        }
+        break;
       }
-      break;
+
+      case 'clear':
+        // Validación de cooldown
+        const now = Date.now();
+        const lastReset = drawingGames[gameId].lastReset[userId] || 0;
+        
+        if (now - lastReset < DRAWING_CONFIG.INK_RESET_COOLDOWN) {
+          console.warn(`Intento de reset demasiado rápido - User: ${userId}`);
+          if (callback) callback({ error: 'Espere antes de resetear nuevamente' });
+          return;
+        }
+
+        // Actualización del estado
+        drawingGames[gameId].inkStates[userId] = DRAWING_CONFIG.MAX_INK;
+        delete drawingGames[gameId].actions[userId];
+        drawingGames[gameId].lastReset[userId] = now;
+
+        // Respuesta inmediata al emisor
+        if (callback) callback({ success: true, ink: DRAWING_CONFIG.MAX_INK });
+
+        // Notificación específica
+        io.to(socket.id).emit('inkUpdate', {
+          userId,
+          ink: DRAWING_CONFIG.MAX_INK,
+          source: 'userReset'
+        });
+
+        // Notificación de limpieza visual al equipo
+        socket.to(`team-${partidaId}-${equipoNumero}`).emit('userDrawingCleared', {
+          userId,
+          timestamp: now
+        });
+        return; // Salir temprano para evitar broadcast duplicado
+
+      default:
+        throw new Error('Tipo de acción no válido');
     }
 
-    case 'clear':
+    // Broadcast para otras acciones (dibujo normal)
+    socket.to(`team-${partidaId}-${equipoNumero}`).emit('drawingAction', {
+      userId,
+      ...action
+    });
 
-    case 'clear':
-    if (action.isLocalReset) {
-      // SOLO actualiza el estado del usuario que limpió
-      drawingGames[gameId].tintaStates[userId] = MAX_TINTA;
-      delete drawingGames[gameId].actions[userId];
-      
-      // Notificar SOLO al usuario que limpió
-      io.to(socket.id).emit('tintaUpdate', {
-        userId,
-        tinta: MAX_TINTA
-      });
-    } else {
+    if (callback) callback({ success: true });
 
-      delete drawingGames[gameId].actions[userId];
-      
-      // Reiniciar tinta SOLO para ese usuario
-      drawingGames[gameId].tintaStates[userId] = 5000;
-
-      // Enviar acción de borrado a todos (solo borra trazos visuales)
-      socket.to(`team-${partidaId}-${equipoNumero}`).emit('drawingAction', {
-        type: 'clear',
-        userId
-      });
-
-      // Enviar tinta actualizada solo al usuario que borró
-      socket.emit('drawingGameState', {
-        actions: [],
-        tintaState: { [userId]: 5000 }
-      });
-      return;
-    }
+  } catch (error) {
+    console.error('Error en drawingAction:', error.message);
+    if (callback) callback({ error: error.message });
   }
-
-  // Para otras acciones (dibujo)
-  io.to(`team-${partidaId}-${equipoNumero}`).emit('drawingAction', {
-    userId,
-    ...action
-  });
 });
 
 
