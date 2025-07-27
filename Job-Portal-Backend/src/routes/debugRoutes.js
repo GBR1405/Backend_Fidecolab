@@ -1,7 +1,9 @@
 import express from 'express';
 import {agregarUsuario, editarUsuario, restaurarContrasena, eliminarUsuario, obtenerInformacionUsuario, desactivarUsuario,
         eliminarHistorial, eliminarLog, eliminarTodasPersonalizaciones, eliminarTodaBitacora, eliminarTodoHistorial,
-        eliminarTodosEstudiantes, eliminarTodosProfesores, getAllUsers, getFullBitacora, getAllAchievementLogs
+        eliminarTodosEstudiantes, eliminarTodosProfesores, getAllUsers, getFullBitacora, getAllAchievementLogs,
+        obtenerGruposUsuario, desvincularGrupoUsuario, agregarGrupoUsuario, desvincularUsuariosGrupo, obtenerGruposConUsuarios,
+        eliminarPersonalizacionesProfesor, eliminarPartidasProfesor, reiniciarLogrosEstudiante, obtenerTodosGrupos
 } from '../controllers/debugController.js';
 
 import { authMiddleware } from "../middleware/authMiddleware.js";
