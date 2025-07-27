@@ -2946,18 +2946,40 @@ async function generarResultadosJuegoActual(partidaId) {
         const game = puzzleGames[key];
 
         const progress = gameTeamProgress?.[partidaId]?.[equipoNumero]?.[currentIndex];
+
         if (typeof progress === 'number') {
           progreso = `${progress}%`;
         } else {
-          progreso = 'N/A';
+          progreso = '0%'; // default seguro
         }
 
-        if (game) {
+        if (game && Array.isArray(game.pieces) && game.pieces.length > 0) {
           tiempo = tiempoJugado;
+
+          let correctas = 0;
+          for (const piece of game.pieces) {
+            if (piece.index === piece.correctIndex) correctas++;
+          }
+
+          const porcentaje = Math.round((correctas / game.pieces.length) * 100);
+          progreso = `${porcentaje}%`;
+
+          // ✅ Validación si jugó (al menos una correcta)
+          if (correctas > 0) {
+            comentario = "";
+          } else {
+            comentario = "Juego No Participado";
+          }
+
+          if (game.tema) {
+            tema = game.tema;
+          }
         } else {
           tiempo = obtenerTiempoMaximoJuego(tipo, juegoActual.dificultad);
+          progreso = "0%";
           comentario = "Juego No Participado";
         }
+
         break;
       }
     }
@@ -3123,125 +3145,145 @@ async function evaluarLogrosGrupales(partidaId, resultadosPorEquipo) {
   try {
     const pool = await poolPromise;
 
-    const equipos = partidaTeams.get(partidaId);
-    const resultados = resultadosPorEquipo[partidaId];
-    if (!equipos || !resultados) return;
+    const logrosPorTipoJuego = {
+      'Dibujo': 'Artista',
+      'Ahorcado': 'Adivinador (Grupo)',
+      'Memoria': 'Buena vista',
+      'Rompecabezas': 'Gran talento'
+    };
 
-    // Filtrar juegos válidos (descartar dibujo si es el único)
-    const juegosUtiles = resultados.filter(j => j.tipoJuego !== "Dibujo");
-    if (juegosUtiles.length === 0) return; // No hay juegos válidos
+    const logrosExtras = {
+      trabajoEnEquipo: 'Trabajo en equipo',
+      finalPerfecto: 'Final Perfecto',
+      primerLugar: 'Coordinación Perfecta',
+      segundoLugar: 'Trabajo en equipo poderoso',
+      tercerLugar: 'Apoyo entre todos'
+    };
 
-    const equiposValidos = Object.keys(equipos).map(e => parseInt(e));
-    const puntuaciones = {};
+    const equiposLogros = new Map(); // equipoNumero -> Set de nombres de logros
+    const posicionesPorJuego = {}; // juegoNumero -> [{ equipo, progresoNum }]
+    const equiposValidos = new Set(); // Equipos que jugaron juegos válidos
 
-    // A. Calcular puntuaciones por orden de finalización
-    const ordenPorJuego = {};
+    // Paso 1: Recorremos los resultados
+    for (const equipo of resultadosPorEquipo) {
+      const { equipo: equipoNumero, juegos } = equipo;
+      const logros = new Set();
+      let juegosCompletados = 0;
+      let juegosJugados = 0;
+      let juegosValidos = new Set();
 
-    for (const juego of juegosUtiles) {
-      if (!juego.resultados || typeof juego.resultados !== 'object') continue;
+      for (const juego of juegos) {
+        const { tipoJuego, comentario, progreso, juegoNumero } = juego;
 
-      // Filtrar solo los equipos que participaron
-      const resultadosValidos = Object.entries(juego.resultados).filter(([equipoId, data]) => {
-        const comentario = (data.comentario || '').toLowerCase();
-        return !comentario.includes("cancelado") && !comentario.includes("no participó");
-      });
+        const participo = !comentario || !comentario.includes("No Participado");
 
-      resultadosValidos.sort(([, a], [, b]) => {
-        const ta = a.tiempo || 999999;
-        const tb = b.tiempo || 999999;
-        return ta - tb;
-      });
+        if (!participio) continue;
 
-      resultadosValidos.forEach(([equipoId], index) => {
-        const id = parseInt(equipoId);
-        const puntos = equiposValidos.length - index; // más alto si quedó de primero
-        puntuaciones[id] = (puntuaciones[id] || 0) + puntos;
-      });
+        juegosJugados++;
+
+        // Logros por tipo de juego
+        const logro = logrosPorTipoJuego[tipoJuego];
+        if (logro) logros.add(logro);
+
+        // Progreso en número
+        let progresoNum = 0;
+        if (progreso && typeof progreso === 'string') {
+          if (progreso.includes('%')) {
+            progresoNum = parseInt(progreso.replace('%', '')) || 0;
+          } else if (progreso.includes('/')) {
+            const [aciertos, total] = progreso.split('/').map(n => parseInt(n));
+            progresoNum = Math.round((aciertos / (aciertos + total)) * 100);
+          } else {
+            progresoNum = parseInt(progreso) || 0;
+          }
+        }
+
+        if (progresoNum === 100) juegosCompletados++;
+
+        // Para validación "Final Perfecto"
+        if (['Rompecabezas', 'Memoria', 'Ahorcado'].includes(tipoJuego)) {
+          juegosValidos.add(tipoJuego);
+        }
+
+        // Guardamos para ranking de posición
+        if (!posicionesPorJuego[juegoNumero]) posicionesPorJuego[juegoNumero] = [];
+        posicionesPorJuego[juegoNumero].push({ equipo: equipoNumero, progreso: progresoNum });
+      }
+
+      if (juegosJugados > 0) logros.add(logrosExtras.trabajoEnEquipo);
+      if (
+        juegosCompletados === juegos.length &&
+        juegos.length > 0 &&
+        juegosValidos.size > 0
+      ) {
+        logros.add(logrosExtras.finalPerfecto);
+      }
+
+      if (logros.size > 0) equiposLogros.set(equipoNumero, logros);
+      if (juegosValidos.size > 0) equiposValidos.add(equipoNumero);
     }
 
-    // Determinar top 3
-    const posiciones = Object.entries(puntuaciones)
-      .sort(([, a], [, b]) => b - a)
-      .map(([equipoId], index) => ({ equipoId: parseInt(equipoId), posicion: index + 1 }));
+    // Paso 2: Evaluar posición final (ranking por promedio de posición)
+    const posicionesTotales = {}; // equipo -> [pos1, pos2, pos3...]
+    for (const juegoNum in posicionesPorJuego) {
+      const ranking = posicionesPorJuego[juegoNum]
+        .sort((a, b) => b.progreso - a.progreso);
 
-    // B. Revisión por equipo
-    for (const { equipoId, posicion } of posiciones) {
-      const miembros = equipos[equipoId] || [];
-
-      let logros = [];
-
-      if (posicion === 1) logros.push("Coordinación Perfecta");
-      if (posicion === 2) logros.push("Trabajo en equipo poderoso");
-      if (posicion === 3) logros.push("Apoyo entre todos");
-
-      // B. Logros por tipo de juego jugado
-      const juegosDelEquipo = juegosUtiles.filter(juego => {
-        const data = juego.resultados?.[equipoId];
-        if (!data) return false;
-        const comentario = (data.comentario || "").toLowerCase();
-        return !comentario.includes("cancelado") && !comentario.includes("no participó");
-      });
-
-      for (const juego of juegosDelEquipo) {
-        const tipo = juego.tipoJuego;
-        if (tipo === "Dibujo") logros.push("Artista");
-        if (tipo === "Ahorcado") logros.push("Adivinador (Grupo)");
-        if (tipo === "Memoria") logros.push("Buena vista");
-        if (tipo === "Rompecabezas") logros.push("Gran talento");
+      let actualPos = 1;
+      for (let i = 0; i < ranking.length; i++) {
+        const equipo = ranking[i].equipo;
+        if (!posicionesTotales[equipo]) posicionesTotales[equipo] = [];
+        posicionesTotales[equipo].push(actualPos);
+        actualPos++;
       }
-
-      // C. Final perfecto y trabajo en equipo
-      const todosJuegos = resultados.filter(j => j.resultados?.[equipoId]);
-
-      const sinErrores = todosJuegos.every(j => {
-        const d = j.resultados[equipoId];
-        return d && d.progreso?.actual === d.progreso?.total;
-      });
-
-      const todosCompletados = todosJuegos.every(j => {
-        const d = j.resultados[equipoId];
-        const comentario = (d?.comentario || "").toLowerCase();
-        return d && !comentario.includes("cancelado") && !comentario.includes("no participó");
-      });
-
-      if (todosJuegos.length > 0 && todosCompletados) {
-        logros.push("Trabajo en equipo");
-        if (sinErrores) {
-          logros.push("Final Perfecto");
-        }
-      }
-
-      // Insertar logros para cada miembro del equipo
-      for (const { userId } of miembros) {
-        for (const nombre of logros) {
-          const logroQuery = await pool.request()
-            .input('nombre', sql.NVarChar(100), nombre)
-            .query(`SELECT Logro_ID_PK FROM Logros_TB WHERE Nombre = @nombre AND Tipo = 'grupo'`);
-
-          if (logroQuery.recordset.length === 0) continue;
-          const logroId = logroQuery.recordset[0].Logro_ID_PK;
-
-          await pool.request()
-            .input('userId', sql.Int, userId)
-            .input('logroId', sql.Int, logroId)
-            .input('partidaId', sql.Int, partidaId)
-            .query(`
-              IF NOT EXISTS (
-                SELECT 1 FROM Usuario_Logros_TB 
-                WHERE Usuario_ID_FK = @userId AND Logro_ID_FK = @logroId
-              )
-              INSERT INTO Usuario_Logros_TB (Usuario_ID_FK, Logro_ID_FK, Partida_ID_FK)
-              VALUES (@userId, @logroId, @partidaId)
-            `);
-        }
-      }
-
-      console.log(`[LOGROS-GRUPO] Equipo ${equipoId} (${posicion}º):`, logros);
     }
-  } catch (error) {
-    console.error('Error al evaluar logros grupales:', error);
+
+    const promedios = Object.entries(posicionesTotales)
+      .map(([equipo, posiciones]) => {
+        const promedio = posiciones.reduce((a, b) => a + b, 0) / posiciones.length;
+        return { equipo: parseInt(equipo), promedio };
+      })
+      .sort((a, b) => a.promedio - b.promedio);
+
+    const topProm = (i) => promedios[i] ? promedios[i].promedio : null;
+
+    for (const entry of promedios) {
+      const equipo = entry.equipo;
+      const prom = entry.promedio;
+
+      if (!equiposValidos.has(equipo)) continue;
+
+      if (prom === topProm(0)) {
+        equiposLogros.get(equipo)?.add(logrosExtras.primerLugar);
+      } else if (prom === topProm(1)) {
+        equiposLogros.get(equipo)?.add(logrosExtras.segundoLugar);
+      } else if (prom === topProm(2)) {
+        equiposLogros.get(equipo)?.add(logrosExtras.tercerLugar);
+      }
+    }
+
+    // Paso 3: Insertar logros en la base
+    for (const [equipoNumero, logrosSet] of equiposLogros.entries()) {
+      for (const nombreLogro of logrosSet) {
+        await pool.request()
+          .input('nombre', sql.NVarChar(100), nombreLogro)
+          .input('partidaId', sql.Int, partidaId)
+          .input('equipo', sql.Int, equipoNumero)
+          .query(`
+            INSERT INTO Logros_Obtenidos_TB (Logro_ID_FK, Partida_ID_FK, Equipo)
+            SELECT Logro_ID_PK, @partidaId, @equipo
+            FROM Logros_TB
+            WHERE Nombre = @nombre AND Tipo = 'grupo'
+          `);
+      }
+    }
+
+    console.log(`[LOGROS] Logros grupales asignados correctamente para partida ${partidaId}`);
+  } catch (err) {
+    console.error('[ERROR] al evaluar logros grupales:', err);
   }
 }
+
 
 
 //-----------------------------------------------------------
