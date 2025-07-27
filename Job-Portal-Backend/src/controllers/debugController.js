@@ -289,11 +289,6 @@ export const eliminarUsuario = async (req, res) => {
           .input("userId", sql.Int, userId)
           .query("DELETE FROM Participantes_TB WHERE Usuario_ID_FK = @userId");
 
-        // 2. Eliminar resultados
-        await transaction.request()
-          .input("userId", sql.Int, userId)
-          .query("DELETE FROM Resultados_TB WHERE Usuario_ID_FK = @userId");
-
         // 3. Eliminar logros
         await transaction.request()
           .input("userId", sql.Int, userId)
