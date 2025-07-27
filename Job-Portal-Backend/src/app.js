@@ -2940,7 +2940,7 @@ async function evaluarLogrosGrupales(partidaId, resultadosPorEquipo) {
         
         // Asignar logro a cada participante
         for (const participante of participantesResult.recordset) {
-          await asignarLogro(participante.Usuario_ID_FK, logro.nombre, 'grupo');
+          await asignarLogro(participante.Usuario_ID_FK, logro.nombre, 'grupo', partidaId);
         }
         
         console.log(`[LOGRO] Equipo ${equipo.equipoNumero} obtuvo "${logro.nombre}" (Posición ${posicionActual + 1})`);
@@ -3012,7 +3012,7 @@ async function evaluarLogrosGrupales(partidaId, resultadosPorEquipo) {
                 `);
               
               for (const participante of participantesResult.recordset) {
-                await asignarLogro(participante.Usuario_ID_FK, logrosPorJuego[juego.tipoJuego], 'grupo');
+                await asignarLogro(participante.Usuario_ID_FK, logrosPorJuego[juego.tipoJuego], 'grupo', partidaId);
               }
               
               console.log(`[LOGRO] Equipo ${equipoNumero} obtuvo "${logrosPorJuego[juego.tipoJuego]}" por completar ${juego.tipoJuego}`);
@@ -3034,14 +3034,14 @@ async function evaluarLogrosGrupales(partidaId, resultadosPorEquipo) {
           // Logro por completar todos los juegos (aunque no al 100%)
           if (tiposJuegosCompletados.size === new Set(equipo.juegos.map(j => j.tipoJuego)).size) {
             for (const participante of participantesResult.recordset) {
-              await asignarLogro(participante.Usuario_ID_FK, 'Trabajo en equipo', 'grupo');
+              await asignarLogro(participante.Usuario_ID_FK, 'Trabajo en equipo', 'grupo', partidaId);
             }
             console.log(`[LOGRO] Equipo ${equipoNumero} obtuvo "Trabajo en equipo" por completar todos los juegos`);
             
             // Logro adicional si todos están al 100%
             if (todosAl100) {
               for (const participante of participantesResult.recordset) {
-                await asignarLogro(participante.Usuario_ID_FK, 'Final Perfecto', 'grupo');
+                await asignarLogro(participante.Usuario_ID_FK, 'Final Perfecto', 'grupo', partidaId);
               }
               console.log(`[LOGRO] Equipo ${equipoNumero} obtuvo "Final Perfecto" por completar todos los juegos al 100%`);
             }
@@ -3079,7 +3079,7 @@ async function evaluarLogrosPersonales(partidaId) {
       const usuarioId = participante.Usuario_ID_FK;
       
       // Logro por participar en una partida
-      await asignarLogro(usuarioId, 'Jugador de partidas', 'usuario');
+      await asignarLogro(usuarioId, 'Jugador de partidas', 'usuario', partidaId);
       
       // Logro de primera vez (verificar si es su primera partida)
       const primeraVezResult = await pool.request()
@@ -3091,7 +3091,7 @@ async function evaluarLogrosPersonales(partidaId) {
         `);
       
       if (primeraVezResult.recordset[0].total === 1) {
-        await asignarLogro(usuarioId, 'Gracias por jugar', 'usuario');
+        await asignarLogro(usuarioId, 'Gracias por jugar', 'usuario', partidaId);
       }
       
       // 3. Verificar juegos en los que participó
@@ -3119,12 +3119,12 @@ async function evaluarLogrosPersonales(partidaId) {
       for (const juego of juegosResult.recordset) {
         const tipoJuego = juego.Juego;
         if (logrosPorJuego[tipoJuego]) {
-          await asignarLogro(usuarioId, logrosPorJuego[tipoJuego], 'usuario');
+          await asignarLogro(usuarioId, logrosPorJuego[tipoJuego], 'usuario' , partidaId);
         }
       }
       
       // 4. Verificar logros de nivel por acumulación
-      await verificarLogrosNivel(usuarioId);
+      await verificarLogrosNivel(usuarioId, partidaId);
       
       // 5. Verificar logro "Hola de nuevo" (jugar con las mismas personas)
       await verificarLogroHolaDeNuevo(usuarioId, partidaId);
@@ -3141,7 +3141,7 @@ async function evaluarLogrosPersonales(partidaId) {
 }
 
 // Función auxiliar para asignar un logro a un usuario
-async function asignarLogro(usuarioId, nombreLogro, tipoLogro) {
+async function asignarLogro(usuarioId, nombreLogro, tipoLogro, partidaId) {
   try {
     const pool = await poolPromise;
     
@@ -3185,12 +3185,13 @@ async function asignarLogro(usuarioId, nombreLogro, tipoLogro) {
       .input('usuarioId', sql.Int, usuarioId)
       .input('logroId', sql.Int, logroId)
       .input('fechaObtencion', sql.DateTime, new Date())
+      .input('partidaId', sql.Int, partidaId)
       .query(`
-        INSERT INTO Usuario_Logros_TB (Usuario_ID_FK, Logro_ID_FK, Fecha_Obtencion)
-        VALUES (@usuarioId, @logroId, @fechaObtencion)
+        INSERT INTO Usuario_Logros_TB (Usuario_ID_FK, Logro_ID_FK, FechaObtenido, Partida_ID_FK)
+        VALUES (@usuarioId, @logroId, @fechaObtencion, @partidaId)
       `);
     
-    console.log(`[LOGRO] Usuario ${usuarioId} obtuvo "${nombreLogro}"`);
+    console.log(`[LOGRO] Usuario ${usuarioId} obtuvo "${nombreLogro}" en partida ${partidaId}`);
     return true;
   } catch (error) {
     console.error(`Error al asignar logro ${nombreLogro} a usuario ${usuarioId}:`, error);
@@ -3250,7 +3251,7 @@ async function verificarLogrosNivel(usuarioId) {
       // Verificar cada nivel
       for (const nivel of tipoLogro.niveles) {
         if (total >= nivel.requisito) {
-          await asignarLogro(usuarioId, nivel.nombre, 'usuario');
+          await asignarLogro(usuarioId, 'Jugador de partidas', 'usuario', partidaId);
         }
       }
     }
@@ -3296,13 +3297,13 @@ async function verificarLogroHolaDeNuevo(usuarioId, partidaId) {
       
       // Asignar logros según el número de partidas juntos
       if (totalJuntos >= 2) {
-        await asignarLogro(usuarioId, 'Hola de nuevo - Nivel 1', 'usuario');
+        await asignarLogro(usuarioId, 'Hola de nuevo - Nivel 1', 'usuario', partidaId);
       }
       if (totalJuntos >= 3) {
-        await asignarLogro(usuarioId, 'Hola de nuevo - Nivel 2', 'usuario');
+        await asignarLogro(usuarioId, 'Hola de nuevo - Nivel 2', 'usuario', partidaId);
       }
       if (totalJuntos >= 5) {
-        await asignarLogro(usuarioId, 'Hola de nuevo - Nivel 3', 'usuario');
+        await asignarLogro(usuarioId, 'Hola de nuevo - Nivel 3', 'usuario', partidaId);
       }
     }
     
@@ -3340,14 +3341,14 @@ async function verificarLogroCazadorDeLogros(usuarioId, partidaId) {
       .query(`
         SELECT COUNT(*) AS total
         FROM Usuario_Logros_TB
-        WHERE Usuario_ID_FK = @usuarioId AND Fecha_Obtencion >= @fechaInicio
+        WHERE Usuario_ID_FK = @usuarioId AND FechaObtenido >= @fechaInicio
       `);
     
     const totalLogros = logrosResult.recordset[0].total;
     
     // Si obtuvo 3 o más logros en esta partida, asignar "Cazador de logros"
     if (totalLogros >= 3) {
-      await asignarLogro(usuarioId, 'Cazador de logros', 'usuario');
+      await asignarLogro(usuarioId, 'Cazador de logros', 'usuario', partidaId);
     }
     
     return true;
