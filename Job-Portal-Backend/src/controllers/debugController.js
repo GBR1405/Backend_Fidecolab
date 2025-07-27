@@ -78,6 +78,94 @@ export const agregarUsuario = async (req, res) => {
 
     const userId = result.recordset[0].Usuario_ID_PK;
 
+    // Enviar correo de bienvenida
+    await transporter.sendMail({
+      from: `"Bienvenida a FideColab" <${process.env.EMAIL_USER}>`,
+      to: correo,
+      subject: "Bienvenido a FideColab",
+      html: `
+        <html>
+          <head>
+            <style>
+              body {
+                font-family: 'Arial', sans-serif;
+                background-color: #f4f6f9;
+                margin: 0;
+                padding: 0;
+                color: #333;
+              }
+              .container {
+                width: 100%;
+                max-width: 600px;
+                margin: 0 auto;
+                padding: 20px;
+                background-color: #ffffff;
+                border-radius: 8px;
+                box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+              }
+              .header {
+                text-align: center;
+                padding: 20px;
+                background-color: rgb(19, 30, 173);
+                border-radius: 8px 8px 0 0;
+                color: #ffffff;
+              }
+              .header img {
+                width: 100px;
+                margin-bottom: 10px;
+              }
+              .content {
+                padding: 20px;
+                font-size: 16px;
+              }
+              .password-box {
+                background-color: #f8f9fa;
+                border: 1px solid #dee2e6;
+                border-radius: 4px;
+                padding: 15px;
+                margin: 20px 0;
+                text-align: center;
+                font-size: 18px;
+                font-weight: bold;
+                color: #dc3545;
+              }
+              .footer {
+                margin-top: 30px;
+                text-align: center;
+                font-size: 14px;
+                color: #888;
+              }
+              .footer p {
+                margin: 10px 0;
+              }
+            </style>
+          </head>
+          <body>
+            <div class="container">
+              <div class="header">
+                <img src="https://cdn.ufidelitas.ac.cr/wp-content/uploads/2023/11/17075151/FideLogo-04.png" alt="Logo" />
+                <h1>Bienvenido a FideColab</h1>
+              </div>
+              <div class="content">
+                <p>Hola ${nombre},</p>
+                <p>¡Bienvenido a FideColab! Se ha creado una cuenta para ti.</p>
+                <p>Tus credenciales de acceso son:</p>
+                <p><strong>Correo:</strong> ${correo}</p>
+                <div class="password-box">
+                  Contraseña: ${password}
+                </div>
+                <p>Te recomendamos cambiar esta contraseña después de iniciar sesión por primera vez.</p>
+                <p>¡Disfruta de la plataforma!</p>
+              </div>
+              <div class="footer">
+                <p>Si tienes problemas para acceder, por favor contacta con nuestro soporte.</p>
+              </div>
+            </div>
+          </body>
+        </html>
+      `,
+    });
+
     await GenerarBitacora(req.user.id, "Usuario agregado en modo debug", null);
 
     return res.status(201).json({
@@ -187,6 +275,88 @@ export const editarUsuario = async (req, res) => {
 /**
  * Restaurar contraseña de un usuario
  */
+
+const passwordResetEmailTemplate = (userEmail, newPassword) => {
+  return `
+    <html>
+      <head>
+        <style>
+          body {
+            font-family: 'Arial', sans-serif;
+            background-color: #f4f6f9;
+            margin: 0;
+            padding: 0;
+            color: #333;
+          }
+          .container {
+            width: 100%;
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #ffffff;
+            border-radius: 8px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+          }
+          .header {
+            text-align: center;
+            padding: 20px;
+            background-color: rgb(19, 30, 173);
+            border-radius: 8px 8px 0 0;
+            color: #ffffff;
+          }
+          .header img {
+            width: 100px;
+            margin-bottom: 10px;
+          }
+          .content {
+            padding: 20px;
+            font-size: 16px;
+          }
+          .password-box {
+            background-color: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 4px;
+            padding: 15px;
+            margin: 20px 0;
+            text-align: center;
+            font-size: 18px;
+            font-weight: bold;
+            color: #dc3545;
+          }
+          .footer {
+            margin-top: 30px;
+            text-align: center;
+            font-size: 14px;
+            color: #888;
+          }
+          .footer p {
+            margin: 10px 0;
+          }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="header">
+            <img src="https://cdn.ufidelitas.ac.cr/wp-content/uploads/2023/11/17075151/FideLogo-04.png" alt="Logo" />
+            <h1>Contraseña restablecida - FideColab</h1>
+          </div>
+          <div class="content">
+            <p>Hemos recibido una solicitud para restablecer tu contraseña en FideColab.</p>
+            <div class="password-box">
+              Nueva contraseña: ${newPassword}
+            </div>
+            <p>Por seguridad, te recomendamos cambiar esta contraseña después de iniciar sesión.</p>
+            <p>Si no solicitaste este cambio, por favor contacta al administrador del sistema.</p>
+          </div>
+          <div class="footer">
+            <p>Gracias por ser parte de nuestra comunidad.</p>
+          </div>
+        </div>
+      </body>
+    </html>
+  `;
+};
+
 export const restaurarContrasena = async (req, res) => {
   const { userId } = req.params;
 
@@ -217,17 +387,7 @@ export const restaurarContrasena = async (req, res) => {
       from: `"Soporte FideColab" <${process.env.EMAIL_USER}>`,
       to: userEmail,
       subject: "Contraseña restablecida",
-      html: `
-        <html>
-          <body>
-            <h2>Tu contraseña ha sido restablecida</h2>
-            <p>Hemos recibido una solicitud para restablecer tu contraseña en FideColab.</p>
-            <p>Tu nueva contraseña es: <strong>${newPassword}</strong></p>
-            <p>Por seguridad, te recomendamos cambiar esta contraseña después de iniciar sesión.</p>
-            <p>Si no solicitaste este cambio, por favor contacta al administrador del sistema.</p>
-          </body>
-        </html>
-      `
+      html: passwordResetEmailTemplate(userEmail, newPassword)
     });
 
     await GenerarBitacora(req.user.id, "Contraseña restaurada en modo debug", null);
