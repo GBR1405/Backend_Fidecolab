@@ -3,7 +3,8 @@ import {agregarUsuario, editarUsuario, restaurarContrasena, eliminarUsuario, obt
         eliminarHistorial, eliminarLog, eliminarTodasPersonalizaciones, eliminarTodaBitacora, eliminarTodoHistorial,
         eliminarTodosEstudiantes, eliminarTodosProfesores, getAllUsers, getFullBitacora, getAllAchievementLogs,
         obtenerGruposUsuario, desvincularGrupoUsuario, agregarGrupoUsuario, desvincularUsuariosGrupo, obtenerGruposConUsuarios,
-        eliminarPersonalizacionesProfesor, eliminarPartidasProfesor, reiniciarLogrosEstudiante, obtenerTodosGrupos
+        eliminarPersonalizacionesProfesor, eliminarPartidasProfesor, reiniciarLogrosEstudiante, obtenerTodosGrupos,
+        obtenerHistorialPartidas
 } from '../controllers/debugController.js';
 
 import { authMiddleware } from "../middleware/authMiddleware.js";
