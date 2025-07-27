@@ -385,17 +385,7 @@ export const restaurarContrasena = async (req, res) => {
       from: `"Soporte FideColab" <${process.env.EMAIL_USER}>`,
       to: userEmail,
       subject: "Contraseña restablecida",
-      html: `
-        <html>
-          <body>
-            <h2>Tu contraseña ha sido restablecida</h2>
-            <p>Hemos recibido una solicitud para restablecer tu contraseña en FideColab.</p>
-            <p>Tu nueva contraseña es: <strong>${newPassword}</strong></p>
-            <p>Por seguridad, te recomendamos cambiar esta contraseña después de iniciar sesión.</p>
-            <p>Si no solicitaste este cambio, por favor contacta al administrador del sistema.</p>
-          </body>
-        </html>
-      `
+      html: passwordResetEmailTemplate(userEmail, newPassword)
     });
 
     await GenerarBitacora(req.user.id, "Contraseña restaurada en modo debug", null);
