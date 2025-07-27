@@ -534,8 +534,6 @@ export const obtenerInformacionUsuario = async (req, res) => {
 export const desactivarUsuario = async (req, res) => {
   const { userId } = req.params;
 
-  // Validación robusta del userId
-  const userIdNumber = parseInt(userId, 10);
   if (isNaN(userIdNumber)) {
     return res.status(400).json({ 
       success: false, 
@@ -544,7 +542,7 @@ export const desactivarUsuario = async (req, res) => {
   }
 
   try {
-    const pool = await poolPromise();
+    const pool = await poolPromise;
 
     // 1. Verificar que el usuario existe
     const userCheck = await pool.request()
