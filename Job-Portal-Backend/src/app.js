@@ -1829,26 +1829,7 @@ socket.on('initDrawingGame', ({ partidaId, equipoNumero, userId }) => {
   });
 });
 
-socket.on('updateTintaState', ({ partidaId, equipoNumero, userId, tinta }) => {
-  const gameId = `drawing-${partidaId}-${equipoNumero}`;
-  
-  if (!drawingGames[gameId]) {
-    drawingGames[gameId] = {
-      actions: {},
-      tintaStates: {}
-    };
-  }
-  
-  // Actualizar estado de tinta
-  drawingGames[gameId].tintaStates[userId] = tinta;
-  
-  // Notificar a otros miembros del equipo (opcional)
-  socket.to(`team-${partidaId}-${equipoNumero}`).emit('drawingAction', {
-    type: 'tintaUpdate',
-    userId,
-    tinta
-  });
-});
+
 
 
 socket.on('resetDrawingGame', ({ partidaId, equipoNumero }) => {
@@ -2041,7 +2022,31 @@ socket.on('drawingAction', ({ partidaId, equipoNumero, userId, action }) => {
 });
 
 
+// Nuevo evento para limpiar solo los trazos visuales
+socket.on('clearDrawingPaths', ({ partidaId, equipoNumero, userId }) => {
+  const gameId = `drawing-${partidaId}-${equipoNumero}`;
+  
+  if (drawingGames[gameId]?.actions?.[userId]) {
+    delete drawingGames[gameId].actions[userId];
+  }
 
+  // Emitir solo a los demás miembros del equipo
+  socket.to(`team-${partidaId}-${equipoNumero}`).emit('clearRemotePaths', { userId });
+});
+
+// Mantén el existente para actualizar tinta
+socket.on('updateTintaState', ({ partidaId, equipoNumero, userId, tinta }) => {
+  const gameId = `drawing-${partidaId}-${equipoNumero}`;
+  
+  if (!drawingGames[gameId]) {
+    drawingGames[gameId] = { actions: {}, tintaStates: {} };
+  }
+  
+  drawingGames[gameId].tintaStates[userId] = tinta;
+  
+  // Notificar solo al usuario
+  io.to(socket.id).emit('tintaUpdate', { userId, tinta });
+});
 
 // Limpiar datos cuando finaliza la partida
 socket.on('cleanDrawingData', (partidaId) => {
