@@ -10,6 +10,7 @@ import sql from 'mssql';
 import bcrypt from 'bcryptjs';
 import dotenv from "dotenv";
 import { GenerarBitacora } from "../controllers/generalController.js";
+import nodemailer from "nodemailer";
 
 dotenv.config();
 
