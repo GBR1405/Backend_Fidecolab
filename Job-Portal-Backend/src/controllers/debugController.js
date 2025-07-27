@@ -526,33 +526,54 @@ export const obtenerInformacionUsuario = async (req, res) => {
 export const desactivarUsuario = async (req, res) => {
   const { userId } = req.params;
 
-  try {
-    const pool = await poolPromise;
+  // Validación robusta del userId
+  const userIdNumber = parseInt(userId, 10);
+  if (isNaN(userIdNumber)) {
+    return res.status(400).json({ 
+      success: false, 
+      message: "ID de usuario debe ser un número válido" 
+    });
+  }
 
-    // Verificar que el usuario existe
+  try {
+    const pool = await poolPromise();
+
+    // 1. Verificar que el usuario existe
     const userCheck = await pool.request()
-      .input("userId", sql.Int, userId)
-      .query("SELECT * FROM Usuario_TB WHERE Usuario_ID_PK = @userId");
+      .input("userId", sql.Int, userIdNumber)
+      .query("SELECT Estado FROM Usuario_TB WHERE Usuario_ID_PK = @userId");
 
     if (userCheck.recordset.length === 0) {
-      return res.status(404).json({ success: false, message: "Usuario no encontrado" });
+      return res.status(404).json({ 
+        success: false, 
+        message: "Usuario no encontrado" 
+      });
     }
 
-    // Desactivar usuario
-    await pool.request()
-      .input("userId", sql.Int, userId)
-      .query("UPDATE Usuario_TB SET Estado = 0 WHERE Usuario_ID_PK = @userId");
+    const currentStatus = userCheck.recordset[0].Estado;
+    const newStatus = currentStatus ? 0 : 1; // Alternar estado
 
-    await GenerarBitacora(req.user.id, "Usuario desactivado en modo debug", null);
+    // 2. Actualizar estado
+    await pool.request()
+      .input("userId", sql.Int, userIdNumber)
+      .input("newStatus", sql.Bit, newStatus)
+      .query("UPDATE Usuario_TB SET Estado = @newStatus WHERE Usuario_ID_PK = @userId");
+
+    await GenerarBitacora(req.user.id, `Usuario ${newStatus ? 'activado' : 'desactivado'} en modo debug`, null);
 
     return res.status(200).json({
       success: true,
-      message: "Usuario desactivado exitosamente"
+      message: `Usuario ${newStatus ? 'activado' : 'desactivado'} exitosamente`,
+      newStatus
     });
 
   } catch (error) {
-    console.error("Error al desactivar usuario:", error);
-    return res.status(500).json({ success: false, message: "Error al desactivar usuario" });
+    console.error("Error al cambiar estado del usuario:", error);
+    return res.status(500).json({ 
+      success: false, 
+      message: "Error al cambiar estado del usuario",
+      error: error.message 
+    });
   }
 };
 
