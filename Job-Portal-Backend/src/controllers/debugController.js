@@ -534,7 +534,7 @@ export const obtenerInformacionUsuario = async (req, res) => {
 export const desactivarUsuario = async (req, res) => {
   const { userId } = req.params;
 
-  if (isNaN(userIdNumber)) {
+  if (isNaN(userId)) {
     return res.status(400).json({ 
       success: false, 
       message: "ID de usuario debe ser un número válido" 
@@ -546,7 +546,7 @@ export const desactivarUsuario = async (req, res) => {
 
     // 1. Verificar que el usuario existe
     const userCheck = await pool.request()
-      .input("userId", sql.Int, userIdNumber)
+      .input("userId", sql.Int, userId)
       .query("SELECT Estado FROM Usuario_TB WHERE Usuario_ID_PK = @userId");
 
     if (userCheck.recordset.length === 0) {
@@ -561,7 +561,7 @@ export const desactivarUsuario = async (req, res) => {
 
     // 2. Actualizar estado
     await pool.request()
-      .input("userId", sql.Int, userIdNumber)
+      .input("userId", sql.Int, userId)
       .input("newStatus", sql.Bit, newStatus)
       .query("UPDATE Usuario_TB SET Estado = @newStatus WHERE Usuario_ID_PK = @userId");
 
