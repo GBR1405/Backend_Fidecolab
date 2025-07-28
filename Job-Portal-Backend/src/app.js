@@ -2826,7 +2826,6 @@ async function renderDrawingToBase64(partidaId, equipoNumero) {
   // 2. Convertir SVG a PNG usando svg2img
   return new Promise((resolve, reject) => {
     try {
-      const svg2img = require('svg2img');
       svg2img(svg, { format: 'png', width, height }, (error, buffer) => {
         if (error) {
           console.error('Error al convertir SVG a PNG:', error);
