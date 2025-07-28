@@ -2861,16 +2861,13 @@ function obtenerTiempoMaximoJuego(tipo, dificultad) {
 // Siempre procesar los logros, independientemente del tipo de juego
 const hayJuegoNoEsDibujo = true;
 
-
-// ... código existente ...
-
 // Función para evaluar logros grupales
 async function evaluarLogrosGrupales(partidaId, resultadosPorEquipo) {
   try {
     console.log(`[LOGROS] Evaluando logros grupales para partida ${partidaId}`);
     const pool = await poolPromise;
-
-    // 1. Calcular posiciones finales basadas en progreso
+    
+    // 1. Calcular puntuación por equipo
     const equiposConPuntuacion = [];
     
     for (const equipo of resultadosPorEquipo) {
@@ -2880,7 +2877,7 @@ async function evaluarLogrosGrupales(partidaId, resultadosPorEquipo) {
       let juegosAl100 = 0;
       let totalJuegos = equipo.juegos.length;
       
-      // Calcular puntuación (menor es mejor)
+      // Calcular puntuación (MAYOR es mejor - nuevo sistema)
       for (const juego of equipo.juegos) {
         // Verificar si el juego fue participado
         if (!juego.comentario || !juego.comentario.includes('No Participado')) {
@@ -2913,14 +2910,14 @@ async function evaluarLogrosGrupales(partidaId, resultadosPorEquipo) {
             }
           }
           
-          // Puntuación inversa: 100% = 1 punto, 0% = 100 puntos
-          puntuacionTotal += (100 - progreso) + 1;
+          // Puntuación directa: 100% = 100 puntos, 0% = 0 puntos
+          puntuacionTotal += progreso;
         }
       }
       
       // Factor de ajuste: equipos que juegan más juegos tienen ventaja
       const factorParticipacion = juegosCompletados / totalJuegos;
-      const puntuacionAjustada = puntuacionTotal / (factorParticipacion || 1);
+      const puntuacionAjustada = puntuacionTotal * factorParticipacion;
       
       equiposConPuntuacion.push({
         equipoNumero,
@@ -2931,8 +2928,8 @@ async function evaluarLogrosGrupales(partidaId, resultadosPorEquipo) {
       });
     }
     
-    // Ordenar por puntuación (menor es mejor)
-    equiposConPuntuacion.sort((a, b) => a.puntuacion - b.puntuacion);
+    // Ordenar por puntuación (MAYOR es mejor)
+    equiposConPuntuacion.sort((a, b) => b.puntuacion - a.puntuacion);
     
     console.log("[POSICIONES FINALES]", equiposConPuntuacion);
     
@@ -2987,101 +2984,92 @@ async function evaluarLogrosGrupales(partidaId, resultadosPorEquipo) {
       'Rompecabezas': 'Gran talento'
     };
     
-    // Verificar si hay al menos un juego que no sea dibujo
-    const hayJuegoNoEsDibujo = resultadosPorEquipo.some(equipo => 
-      equipo.juegos.some(juego => 
-        juego.tipoJuego !== 'Dibujo' && 
-        (!juego.comentario || !juego.comentario.includes('No Participado'))
-      )
-    );
+    // Eliminar la restricción para juegos de dibujo
+    // Establecer hayJuegoNoEsDibujo como true siempre
+    const hayJuegoNoEsDibujo = true;
     
-    if (hayJuegoNoEsDibujo) {
-      for (const equipo of resultadosPorEquipo) {
-        const equipoNumero = equipo.equipo;
-        const tiposJuegosCompletados = new Set();
-        let todosAl100 = true;
-        
-        // Verificar juegos completados
-        for (const juego of equipo.juegos) {
-          if (!juego.comentario || !juego.comentario.includes('No Participado')) {
-            tiposJuegosCompletados.add(juego.tipoJuego);
-            
-            // Verificar si el juego está al 100%
-            let progresoCompleto = false;
-            
-            if (juego.tipoJuego === 'Memoria') {
-              const partes = juego.progreso.split('/');
-              if (partes.length === 2) {
-                const [encontrados, total] = partes.map(Number);
-                progresoCompleto = encontrados === total;
-              }
-            } else if (juego.tipoJuego === 'Rompecabezas') {
-              progresoCompleto = juego.progreso === '100%' || juego.progreso === 100;
-            } else if (juego.tipoJuego === 'Dibujo') {
-              // Para dibujo consideramos que siempre está completo si participaron
-              progresoCompleto = true;
-            } else if (juego.tipoJuego === 'Ahorcado') {
-              const partes = juego.progreso.split('/');
-              if (partes.length === 2) {
-                const [acertadas, errores] = partes.map(Number);
-                progresoCompleto = acertadas > 0 && errores < 6; // Simplificación
-              }
+    // Procesar todos los equipos y juegos
+    for (const equipo of resultadosPorEquipo) {
+      const equipoNumero = equipo.equipo;
+      const tiposJuegosCompletados = new Set();
+      let todosAl100 = true;
+      
+      // Verificar juegos completados
+      for (const juego of equipo.juegos) {
+        if (!juego.comentario || !juego.comentario.includes('No Participado')) {
+          tiposJuegosCompletados.add(juego.tipoJuego);
+          
+          // Verificar si el juego está al 100%
+          let progresoCompleto = false;
+          
+          if (juego.tipoJuego === 'Memoria') {
+            const partes = juego.progreso.split('/');
+            if (partes.length === 2) {
+              const [encontrados, total] = partes.map(Number);
+              progresoCompleto = encontrados === total;
             }
-            
-            if (!progresoCompleto) {
-              todosAl100 = false;
-            }
-            
-            // Asignar logro por tipo de juego
-            if (logrosPorJuego[juego.tipoJuego]) {
-              const participantesResult = await pool.request()
-                .input('partidaId', sql.Int, partidaId)
-                .input('equipoNumero', sql.Int, equipoNumero)
-                .query(`
-                  SELECT Usuario_ID_FK 
-                  FROM Participantes_TB 
-                  WHERE Partida_ID_FK = @partidaId AND Equipo_Numero = @equipoNumero
-                `);
-              
-              for (const participante of participantesResult.recordset) {
-                await asignarLogro(participante.Usuario_ID_FK, logrosPorJuego[juego.tipoJuego], 'grupo', partidaId);
-              }
-              
-              console.log(`[LOGRO] Equipo ${equipoNumero} obtuvo "${logrosPorJuego[juego.tipoJuego]}" por completar ${juego.tipoJuego}`);
+          } else if (juego.tipoJuego === 'Rompecabezas') {
+            progresoCompleto = juego.progreso === '100%' || juego.progreso === 100;
+          } else if (juego.tipoJuego === 'Dibujo') {
+            // Para dibujo consideramos que siempre está completo si participaron
+            progresoCompleto = true;
+          } else if (juego.tipoJuego === 'Ahorcado') {
+            const partes = juego.progreso.split('/');
+            if (partes.length === 2) {
+              const [acertadas, errores] = partes.map(Number);
+              progresoCompleto = acertadas > 0 && errores < 6; // Simplificación
             }
           }
-        }
-        
-        // 4. Asignar logros por completar todos los juegos
-        if (tiposJuegosCompletados.size > 0) {
-          const participantesResult = await pool.request()
-            .input('partidaId', sql.Int, partidaId)
-            .input('equipoNumero', sql.Int, equipoNumero)
-            .query(`
-              SELECT Usuario_ID_FK 
-              FROM Participantes_TB 
-              WHERE Partida_ID_FK = @partidaId AND Equipo_Numero = @equipoNumero
-            `);
           
-          // Logro por completar todos los juegos (aunque no al 100%)
-          if (tiposJuegosCompletados.size === new Set(equipo.juegos.map(j => j.tipoJuego)).size) {
-            for (const participante of participantesResult.recordset) {
-              await asignarLogro(participante.Usuario_ID_FK, 'Trabajo en equipo', 'grupo', partidaId);
-            }
-            console.log(`[LOGRO] Equipo ${equipoNumero} obtuvo "Trabajo en equipo" por completar todos los juegos`);
+          if (!progresoCompleto) {
+            todosAl100 = false;
+          }
+          
+          // Asignar logro por tipo de juego (aunque no esté al 100%)
+          if (logrosPorJuego[juego.tipoJuego]) {
+            const participantesResult = await pool.request()
+              .input('partidaId', sql.Int, partidaId)
+              .input('equipoNumero', sql.Int, equipoNumero)
+              .query(`
+                SELECT Usuario_ID_FK 
+                FROM Participantes_TB 
+                WHERE Partida_ID_FK = @partidaId AND Equipo_Numero = @equipoNumero
+              `);
             
-            // Logro adicional si todos están al 100%
-            if (todosAl100) {
-              for (const participante of participantesResult.recordset) {
-                await asignarLogro(participante.Usuario_ID_FK, 'Final Perfecto', 'grupo', partidaId);
-              }
-              console.log(`[LOGRO] Equipo ${equipoNumero} obtuvo "Final Perfecto" por completar todos los juegos al 100%`);
+            for (const participante of participantesResult.recordset) {
+              await asignarLogro(participante.Usuario_ID_FK, logrosPorJuego[juego.tipoJuego], 'grupo', partidaId);
             }
+            
+            console.log(`[LOGRO] Equipo ${equipoNumero} obtuvo "${logrosPorJuego[juego.tipoJuego]}" por completar ${juego.tipoJuego}`);
           }
         }
       }
-    } else {
-      console.log("[LOGROS] No se asignaron logros de posición porque todos los juegos son de dibujo");
+      
+      // 4. Asignar logros por completar todos los juegos
+      if (tiposJuegosCompletados.size > 0) {
+        const participantesResult = await pool.request()
+          .input('partidaId', sql.Int, partidaId)
+          .input('equipoNumero', sql.Int, equipoNumero)
+          .query(`
+            SELECT Usuario_ID_FK 
+            FROM Participantes_TB 
+            WHERE Partida_ID_FK = @partidaId AND Equipo_Numero = @equipoNumero
+          `);
+        
+        // Logro "Trabajo en equipo" si jugaron al menos un juego
+        for (const participante of participantesResult.recordset) {
+          await asignarLogro(participante.Usuario_ID_FK, 'Trabajo en equipo', 'grupo', partidaId);
+        }
+        console.log(`[LOGRO] Equipo ${equipoNumero} obtuvo "Trabajo en equipo" por participar en al menos un juego`);
+        
+        // Logro adicional "Final Perfecto" si todos están al 100%
+        if (todosAl100 && tiposJuegosCompletados.size === new Set(equipo.juegos.map(j => j.tipoJuego)).size) {
+          for (const participante of participantesResult.recordset) {
+            await asignarLogro(participante.Usuario_ID_FK, 'Final Perfecto', 'grupo', partidaId);
+          }
+          console.log(`[LOGRO] Equipo ${equipoNumero} obtuvo "Final Perfecto" por completar todos los juegos al 100%`);
+        }
+      }
     }
     
     return true;
@@ -3162,11 +3150,16 @@ async function evaluarLogrosPersonales(partidaId) {
           const resultados = JSON.parse(juegosJugadosResult.recordset[0].Resultados);
           
           // Asignar logros por tipo de juego
-          const tiposJuegosJugados = new Set(resultados.map(r => r.tipoJuego));
+          const tiposJuegosJugados = new Set();
           
-          for (const tipoJuego of tiposJuegosJugados) {
-            if (logrosPorJuego[tipoJuego]) {
-              await asignarLogro(usuarioId, logrosPorJuego[tipoJuego], 'usuario', partidaId);
+          for (const juego of resultados) {
+            // Solo considerar juegos en los que participó (no tienen "No Participado")
+            if (!juego.comentario || !juego.comentario.includes('No Participado')) {
+              tiposJuegosJugados.add(juego.tipoJuego);
+              
+              if (logrosPorJuego[juego.tipoJuego]) {
+                await asignarLogro(usuarioId, logrosPorJuego[juego.tipoJuego], 'usuario', partidaId);
+              }
             }
           }
         }
@@ -3196,8 +3189,8 @@ async function evaluarLogrosPersonales(partidaId) {
       // 4. Verificar logros de nivel por acumulación
       await verificarLogrosNivel(usuarioId, partidaId);
       
-      // 5. Verificar logro "Hola de nuevo" (jugar con las mismas personas)
-      await verificarLogroHolaDeNuevo(usuarioId, partidaId);
+      // 5. Omitir verificación de "Hola de nuevo" como solicitado
+      // await verificarLogroHolaDeNuevo(usuarioId, partidaId);
       
       // 6. Verificar logro "Cazador de logros"
       await verificarLogroCazadorDeLogros(usuarioId, partidaId);
@@ -3270,7 +3263,7 @@ async function asignarLogro(usuarioId, nombreLogro, tipoLogro, partidaId) {
 }
 
 // Función para verificar logros de nivel por acumulación
-async function verificarLogrosNivel(usuarioId) {
+async function verificarLogrosNivel(usuarioId, partidaId) {
   try {
     const pool = await poolPromise;
     
@@ -3321,7 +3314,8 @@ async function verificarLogrosNivel(usuarioId) {
       // Verificar cada nivel
       for (const nivel of tipoLogro.niveles) {
         if (total >= nivel.requisito) {
-          await asignarLogro(usuarioId, 'Jugador de partidas', 'usuario', partidaId);
+          // Corregido: asignar el logro de nivel correspondiente, no siempre "Jugador de partidas"
+          await asignarLogro(usuarioId, nivel.nombre, 'usuario', partidaId);
         }
       }
     }
@@ -3408,16 +3402,19 @@ async function verificarLogroCazadorDeLogros(usuarioId, partidaId) {
     const logrosResult = await pool.request()
       .input('usuarioId', sql.Int, usuarioId)
       .input('fechaInicio', sql.DateTime, fechaInicio)
+      .input('partidaId', sql.Int, partidaId)
       .query(`
         SELECT COUNT(*) AS total
         FROM Usuario_Logros_TB
-        WHERE Usuario_ID_FK = @usuarioId AND FechaObtenido >= @fechaInicio
+        WHERE Usuario_ID_FK = @usuarioId 
+        AND FechaObtenido >= @fechaInicio
+        AND Partida_ID_FK = @partidaId
       `);
     
     const totalLogros = logrosResult.recordset[0].total;
     
-    // Si obtuvo 3 o más logros en esta partida, asignar "Cazador de logros"
-    if (totalLogros >= 3) {
+    // Si obtuvo 4 o más logros en esta partida, asignar "Cazador de logros"
+    if (totalLogros >= 4) {
       await asignarLogro(usuarioId, 'Cazador de logros', 'usuario', partidaId);
     }
     
