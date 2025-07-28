@@ -382,6 +382,15 @@ export const startSimulation = async (req, res) => {
         while (i < shuffledEstudiantes.length) {
         const restantes = shuffledEstudiantes.length - i;
 
+        if (restantes === 9 && shuffledEstudiantes.length === 9) {
+            grupos.push(shuffledEstudiantes.slice(i, i + 3));
+            i += 3;
+            grupos.push(shuffledEstudiantes.slice(i, i + 3));
+            i += 3;
+            grupos.push(shuffledEstudiantes.slice(i, i + 3));
+            break;
+        }
+
         if (restantes === 5 && shuffledEstudiantes.length === 5) {
             grupos.push(shuffledEstudiantes.slice(i, i + 2));
             i += 2;
@@ -397,7 +406,7 @@ export const startSimulation = async (req, res) => {
         if (restantes === 5) {
             grupos.push(shuffledEstudiantes.slice(i, i + 3));
             i += 3;
-            grupos.push(shuffledEstudiantes.slice(i, i + 3)); // solo se tomarán 2, pero resolveremos después
+            grupos.push(shuffledEstudiantes.slice(i, i + 3)); // toma solo 2, pendiente de ajustar si necesario
             break;
         }
 
@@ -417,7 +426,7 @@ export const startSimulation = async (req, res) => {
 
         grupos.push(shuffledEstudiantes.slice(i, i + 4));
         i += 4;
-    }
+        }
 
     // 🔁 Revisión final: si el último grupo tiene 1 o 2 → reequilibrar
     const ultimo = grupos[grupos.length - 1];
