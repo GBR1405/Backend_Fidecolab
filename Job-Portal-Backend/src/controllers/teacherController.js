@@ -382,6 +382,13 @@ export const startSimulation = async (req, res) => {
         while (i < shuffledEstudiantes.length) {
         const restantes = shuffledEstudiantes.length - i;
 
+        if (restantes === 5 && shuffledEstudiantes.length === 5) {
+            grupos.push(shuffledEstudiantes.slice(i, i + 2));
+            i += 2;
+            grupos.push(shuffledEstudiantes.slice(i, i + 3));
+            break;
+        }
+
         if (restantes === 3 || restantes === 4) {
             grupos.push(shuffledEstudiantes.slice(i, i + restantes));
             break;
