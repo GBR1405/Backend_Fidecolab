@@ -3417,8 +3417,12 @@ async function generarResultadosJuegoActual(partidaId) {
             progreso = `${letrasAdivinadas}/${intentosUsados}`;
           }
         } else if (juegoActual.tipo === "Dibujo") {
-          // Para dibujo, guardamos una referencia a la imagen
-          progreso = "[Imagen en Base64]";
+          try {
+            progreso = await renderDrawingToBase64(partidaId, equipoNumero);
+          } catch (error) {
+            console.error('Error al generar imagen:', error);
+            progreso = "Error al generar imagen";
+          }
         }
       }
       
