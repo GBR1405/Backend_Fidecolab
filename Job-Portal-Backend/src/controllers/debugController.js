@@ -473,13 +473,6 @@ export const eliminarUsuario = async (req, res) => {
               WHERE Partida_ID_FK IN (${partidasIds.join(",")})
             `);
 
-          // 3. Eliminar resultados de esas partidas
-          await transaction.request()
-            .query(`
-              DELETE FROM Resultados_TB 
-              WHERE Partida_ID_FK IN (${partidasIds.join(",")})
-            `);
-
           // 4. Eliminar logros de esas partidas
           await transaction.request()
             .query(`
