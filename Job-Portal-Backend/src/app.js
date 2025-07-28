@@ -2171,18 +2171,36 @@ socket.on('getDrawingState', ({ partidaId, equipoNumero }, callback) => {
 });
 
 // Guardar imagen final del dibujo
-socket.on('saveDrawing', ({ partidaId, equipoNumero, imageData }) => {
+socket.on('saveDrawing', async ({ partidaId, equipoNumero, imageData }) => {
   const gameId = `drawing-${partidaId}-${equipoNumero}`;
   
   if (!drawingGames[gameId]) {
     drawingGames[gameId] = { actions: {}, imageData: null };
   }
   
-  drawingGames[gameId].imageData = imageData;
+  // Si se proporciona imageData, usarlo directamente
+  if (imageData && imageData.startsWith('data:image')) {
+    drawingGames[gameId].imageData = imageData;
+    console.log(`Imagen guardada directamente para partida ${partidaId}, equipo ${equipoNumero}`);
+  } else {
+    // Si no hay imageData, generar desde los trazos
+    try {
+      const generatedImageData = await renderDrawingToBase64(partidaId, equipoNumero);
+      drawingGames[gameId].imageData = generatedImageData;
+      console.log(`Imagen generada para partida ${partidaId}, equipo ${equipoNumero}`);
+    } catch (error) {
+      console.error(`Error al generar imagen para partida ${partidaId}, equipo ${equipoNumero}:`, error);
+      // En caso de error, usar un canvas en blanco
+      drawingGames[gameId].imageData = getBlankCanvasData();
+    }
+  }
   
   // Actualizar demostración si está activa
   if (drawingDemonstrations[partidaId]) {
-    drawingDemonstrations[partidaId].drawings[equipoNumero] = imageData;
+    if (!drawingDemonstrations[partidaId].drawings) {
+      drawingDemonstrations[partidaId].drawings = {};
+    }
+    drawingDemonstrations[partidaId].drawings[equipoNumero] = drawingGames[gameId].imageData;
     io.to(`partida_${partidaId}`).emit('drawingUpdated', { equipoNumero });
   }
 });
@@ -2395,8 +2413,8 @@ socket.on('saveDrawing', ({ partidaId, equipoNumero, imageData }) => {
 
 // Función auxiliar para canvas blanco
 function getBlankCanvasData() {
-  // Crear un canvas blanco sin usar DOM
-  return 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAyAAAAMgCAYAAADbc...'; // Base64 de un canvas blanco 800x600
+  // Crear un canvas blanco básico en base64
+  return 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAyAAAAJYCAYAAACadoJwAAABhGlDQ1BJQ0MgcHJvZmlsZQAAKJF9kT1Iw0AcxV9TpSIVBzuIOGSoThZERRylikWwUNoKrTqYXPohNGlIUlwcBdeCgx+LVQcXZ10dXAVB8APE1cVJ0UVK/F9SaBHjwXE/3t173L0DhGaVqWbPOKBqlpFOxMVcflUMvCKIEYQxICJTT2YWM/AcX/fw8fUuyrO8z/05BpWCyQCfSDzHdMMi3iCe2bR0zvvEYVaWFOJz4nGDLkj8yHXZ5TfOJYcFnhk2Mul54jCxWOpiuYvZsqmJJ4mjqq5TvpDzWeW8xVkrV1nznvyF4YK+ssx12iNIYBFLkCBCQR0VVGEhRqtGiok07Sc8/KOOXySXTK4KGDkWUIcK2Q2D/8Hv2VqFqUkvKRQHAi+O8zEKBHaBVsNxvo/jVKsngP8ZuNI6/loTmP0kvdHRYkdA/zZwcd3R5D3gcgcYfDJkU3alIE2hWATez+ib8kD/LdC75vXW2sfpA5ClrpZugINDYKxE2ese7+7p7O3fM63+fgDFjHLGfzUsagAAAAlwSFlzAAAuIwAALiMBeKU/dgAAAAd0SU1FB+gGEwwQAJbzYYQAAAAZdEVYdENvbW1lbnQAQ3JlYXRlZCB3aXRoIEdJTVBXgQ4XAAAACklEQVQI12NgAAAAAgAB4iG8MwAAAABJRU5ErkJggg==';
 }
 
 socket.on('getAllDrawings', (partidaId, callback) => {
@@ -2762,8 +2780,10 @@ async function renderDrawingToBase64(partidaId, equipoNumero) {
   const gameId = `drawing-${partidaId}-${equipoNumero}`;
   const game = drawingGames[gameId];
 
-  if (!game || !game.actions) {
-    throw new Error(`No hay trazos para partida ${partidaId}, equipo ${equipoNumero}`);
+  if (!game || !game.actions || Object.keys(game.actions).length === 0) {
+    console.log(`No hay trazos para partida ${partidaId}, equipo ${equipoNumero}, devolviendo canvas en blanco`);
+    // Devolver un canvas en blanco en lugar de lanzar un error
+    return getBlankCanvasData();
   }
 
   const width = 800;
@@ -2773,8 +2793,10 @@ async function renderDrawingToBase64(partidaId, equipoNumero) {
   let pathsSVG = '';
 
   for (const [userId, paths] of Object.entries(game.actions)) {
+    if (!paths || !Array.isArray(paths)) continue;
+    
     for (const path of paths) {
-      if (!path.points?.length) continue;
+      if (!path.points || !Array.isArray(path.points) || path.points.length === 0) continue;
 
       const d = path.points.map((p, i) =>
         `${i === 0 ? 'M' : 'L'}${p.x},${p.y}`
@@ -2799,16 +2821,25 @@ async function renderDrawingToBase64(partidaId, equipoNumero) {
     </svg>
   `;
 
-  // 2. Convertir SVG a PNG (usando svg2img o canvas)
+  console.log(`Generando SVG para partida ${partidaId}, equipo ${equipoNumero}`);
+  
+  // 2. Convertir SVG a PNG usando svg2img
   return new Promise((resolve, reject) => {
-    svg2img(svg, { format: 'png', width, height }, (error, buffer) => {
-      if (error) {
-        console.error('Error al convertir SVG a PNG:', error);
-        return reject(error);
-      }
-      const base64 = `data:image/png;base64,${buffer.toString('base64')}`;
-      resolve(base64);
-    });
+    try {
+      const svg2img = require('svg2img');
+      svg2img(svg, { format: 'png', width, height }, (error, buffer) => {
+        if (error) {
+          console.error('Error al convertir SVG a PNG:', error);
+          return reject(error);
+        }
+        const base64 = `data:image/png;base64,${buffer.toString('base64')}`;
+        console.log(`Base64 generado correctamente para partida ${partidaId}, equipo ${equipoNumero}`);
+        resolve(base64);
+      });
+    } catch (error) {
+      console.error('Error al usar svg2img:', error);
+      reject(error);
+    }
   });
 }
 
@@ -3462,11 +3493,21 @@ async function generarResultadosJuegoActual(partidaId) {
           }
         } else if (juegoActual.tipo === "Dibujo") {
           try {
-            comentario = await renderDrawingToBase64(partidaId, equipoNumero);
+            const gameId = `drawing-${partidaId}-${equipoNumero}`;
+            const game = drawingGames[gameId];
+            
+            // Si ya hay una imagen guardada, usarla
+            if (game && game.imageData) {
+              comentario = game.imageData;
+            } else {
+              // Si no hay imagen guardada, generarla
+              comentario = await renderDrawingToBase64(partidaId, equipoNumero);
+            }
+            
             progreso = "Dibujo completado"; 
           } catch (error) {
             console.error('Error al generar imagen:', error);
-            comentario = "Error al generar el dibujo";
+            comentario = getBlankCanvasData(); // Usar canvas en blanco en caso de error
           }
         }
       }
