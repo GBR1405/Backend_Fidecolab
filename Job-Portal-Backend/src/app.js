@@ -2830,7 +2830,8 @@ function obtenerTiempoMaximoJuego(tipo, dificultad) {
   }
 }
 
-
+// Siempre procesar los logros, independientemente del tipo de juego
+const hayJuegoNoEsDibujo = true;
 
 
 // ... código existente ...
@@ -3087,28 +3088,16 @@ async function evaluarLogrosPersonales(partidaId) {
       // Logro de primera vez (verificar si es su primera partida)
       const primeraVezResult = await pool.request()
         .input('usuarioId', sql.Int, usuarioId)
+        .input('partidaId', sql.Int, partidaId)
         .query(`
           SELECT COUNT(*) AS total
           FROM Participantes_TB
-          WHERE Usuario_ID_FK = @usuarioId
+          WHERE Usuario_ID_FK = @usuarioId AND Partida_ID_FK != @partidaId
         `);
-      
-      if (primeraVezResult.recordset[0].total === 1) {
+
+      if (primeraVezResult.recordset[0].total === 0) {
         await asignarLogro(usuarioId, 'Gracias por jugar', 'usuario', partidaId);
       }
-      
-      // 3. Verificar juegos en los que participó
-      const juegosResult = await pool.request()
-        .input('partidaId', sql.Int, partidaId)
-        .input('usuarioId', sql.Int, usuarioId)
-        .query(`
-          SELECT cj.Tipo_Juego_ID_FK, tj.Juego
-          FROM Partida_TB p
-          JOIN ConfiguracionJuego_TB cj ON p.Personalizacion_ID_FK = cj.Personalizacion_ID_PK
-          JOIN Tipo_Juego_TB tj ON cj.Tipo_Juego_ID_FK = tj.Tipo_Juego_ID_PK
-          JOIN Participantes_TB pt ON p.Partida_ID_PK = pt.Partida_ID_FK
-          WHERE p.Partida_ID_PK = @partidaId AND pt.Usuario_ID_FK = @usuarioId
-        `);
       
       // Mapeo de tipos de juego a logros
       const logrosPorJuego = {
@@ -3118,11 +3107,61 @@ async function evaluarLogrosPersonales(partidaId) {
         'Ahorcado': 'Adivinador'
       };
       
-      // Asignar logros por tipo de juego
-      for (const juego of juegosResult.recordset) {
-        const tipoJuego = juego.Juego;
-        if (logrosPorJuego[tipoJuego]) {
-          await asignarLogro(usuarioId, logrosPorJuego[tipoJuego], 'usuario' , partidaId);
+      // Obtener el equipo del usuario
+      const equipoResult = await pool.request()
+        .input('partidaId', sql.Int, partidaId)
+        .input('usuarioId', sql.Int, usuarioId)
+        .query(`
+          SELECT Equipo_Numero
+          FROM Participantes_TB
+          WHERE Partida_ID_FK = @partidaId AND Usuario_ID_FK = @usuarioId
+        `);
+
+      if (equipoResult.recordset.length > 0) {
+        const equipoNumero = equipoResult.recordset[0].Equipo_Numero;
+        
+        // Obtener los juegos jugados por el equipo del usuario
+        const juegosJugadosResult = await pool.request()
+          .input('partidaId', sql.Int, partidaId)
+          .input('equipoNumero', sql.Int, equipoNumero)
+          .query(`
+            SELECT r.Resultados
+            FROM Resultados_TB r
+            WHERE r.Partida_ID_FK = @partidaId AND r.Equipo = @equipoNumero
+          `);
+        
+        if (juegosJugadosResult.recordset.length > 0) {
+          const resultados = JSON.parse(juegosJugadosResult.recordset[0].Resultados);
+          
+          // Asignar logros por tipo de juego
+          const tiposJuegosJugados = new Set(resultados.map(r => r.tipoJuego));
+          
+          for (const tipoJuego of tiposJuegosJugados) {
+            if (logrosPorJuego[tipoJuego]) {
+              await asignarLogro(usuarioId, logrosPorJuego[tipoJuego], 'usuario', partidaId);
+            }
+          }
+        }
+      } else {
+        // 3. Verificar juegos en los que participó (método anterior como fallback)
+        const juegosResult = await pool.request()
+        .input('partidaId', sql.Int, partidaId)
+        .input('usuarioId', sql.Int, usuarioId)
+        .query(`
+          SELECT DISTINCT tj.Juego
+          FROM Partida_TB p
+          JOIN ConfiguracionJuego_TB cj ON p.Personalizacion_ID_FK = cj.Personalizacion_ID_PK
+          JOIN Tipo_Juego_TB tj ON cj.Tipo_Juego_ID_FK = tj.Tipo_Juego_ID_PK
+          JOIN Participantes_TB pt ON p.Partida_ID_PK = pt.Partida_ID_FK
+          WHERE p.Partida_ID_PK = @partidaId AND pt.Usuario_ID_FK = @usuarioId
+        `);
+        
+        // Asignar logros por tipo de juego
+        for (const juego of juegosResult.recordset) {
+          const tipoJuego = juego.Juego;
+          if (logrosPorJuego[tipoJuego]) {
+            await asignarLogro(usuarioId, logrosPorJuego[tipoJuego], 'usuario' , partidaId);
+          }
         }
       }
       
@@ -3299,13 +3338,13 @@ async function verificarLogroHolaDeNuevo(usuarioId, partidaId) {
       const totalJuntos = partidasJuntosResult.recordset[0].total;
       
       // Asignar logros según el número de partidas juntos
-      if (totalJuntos >= 2) {
+      if (totalJuntos >= 3) {
         await asignarLogro(usuarioId, 'Hola de nuevo - Nivel 1', 'usuario', partidaId);
       }
-      if (totalJuntos >= 3) {
+      if (totalJuntos >= 4) {
         await asignarLogro(usuarioId, 'Hola de nuevo - Nivel 2', 'usuario', partidaId);
       }
-      if (totalJuntos >= 5) {
+      if (totalJuntos >= 6) {
         await asignarLogro(usuarioId, 'Hola de nuevo - Nivel 3', 'usuario', partidaId);
       }
     }
