@@ -186,6 +186,43 @@ const GAME_TIMES = {
 
 //Funciones extras
 
+// Agregar esta función antes del evento nextGame
+async function guardarDibujosActuales(partidaId) {
+  try {
+    const config = global.partidasConfig[partidaId];
+    if (!config) return;
+    
+    const currentGame = config.juegos[config.currentIndex];
+    if (currentGame.tipo !== 'Dibujo') return;
+    
+    // Obtener todos los equipos de la partida
+    const pool = await poolPromise;
+    const result = await pool.request()
+      .input('partidaId', sql.Int, partidaId)
+      .query('SELECT DISTINCT Equipo_Numero FROM Participantes_TB WHERE Partida_ID_FK = @partidaId');
+    
+    // Guardar dibujo de cada equipo
+    for (const row of result.recordset) {
+      const equipoNumero = row.Equipo_Numero;
+      const gameId = `drawing-${partidaId}-${equipoNumero}`;
+      
+      if (drawingGames[gameId] && !drawingGames[gameId].imageData) {
+        try {
+          // Generar imagen desde los trazos
+          const imageData = await renderDrawingToBase64(partidaId, equipoNumero);
+          drawingGames[gameId].imageData = imageData;
+          console.log(`Dibujo guardado automáticamente para partida ${partidaId}, equipo ${equipoNumero}`);
+        } catch (error) {
+          console.error(`Error guardando dibujo para equipo ${equipoNumero}:`, error);
+          drawingGames[gameId].imageData = getBlankCanvasData();
+        }
+      }
+    }
+  } catch (error) {
+    console.error('Error en guardarDibujosActuales:', error);
+  }
+}
+
 function getBlankCanvasData() {
   // Crear un canvas blanco básico en base64
   return 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAyAAAAJYCAYAAACadoJwAAABhGlDQ1BJQ0MgcHJvZmlsZQAAKJF9kT1Iw0AcxV9TpSIVBzuIOGSoThZERRylikWwUNoKrTqYXPohNGlIUlwcBdeCgx+LVQcXZ10dXAVB8APE1cVJ0UVK/F9SaBHjwXE/3t173L0DhGaVqWbPOKBqlpFOxMVcflUMvCKIEYQxICJTT2YWM/AcX/fw8fUuyrO8z/05BpWCyQCfSDzHdMMi3iCe2bR0zvvEYVaWFOJz4nGDLkj8yHXZ5TfOJYcFnhk2Mul54jCxWOpiuYvZsqmJJ4mjqq5TvpDzWeW8xVkrV1nznvyF4YK+ssx12iNIYBFLkCBCQR0VVGEhRqtGiok07Sc8/KOOXySXTK4KGDkWUIcK2Q2D/8Hv2VqFqUkvKRQHAi+O8zEKBHaBVsNxvo/jVKsngP8ZuNI6/loTmP0kvdHRYkdA/zZwcd3R5D3gcgcYfDJkU3alIE2hWATez+ib8kD/LdC75vXW2sfpA5ClrpZugINDYKxE2ese7+7p7O3fM63+fgDFjHLGfzUsagAAAAlwSFlzAAAuIwAALiMBeKU/dgAAAAd0SU1FB+gGEwwQAJbzYYQAAAAZdEVYdENvbW1lbnQAQ3JlYXRlZCB3aXRoIEdJTVBXgQ4XAAAACklEQVQI12NgAAAAAgAB4iG8MwAAAABJRU5ErkJggg==';
@@ -1183,6 +1220,8 @@ socket.on('nextGame', async (partidaId, callback) => {
     if (!global.partidasConfig || !global.partidasConfig[partidaId]) {
       return callback({ error: "Configuración no encontrada" });
     }
+
+    await guardarDibujosActuales(partidaId);
 
     await generarResultadosJuegoActual(partidaId);
 
