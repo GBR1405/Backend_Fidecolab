@@ -1683,58 +1683,41 @@ export const eliminarCurso = async (req, res) => {
   try {
     const pool = await poolPromise;
 
-    // 1. Obtener el ID del curso a partir del grupoCursoId
-    const cursoResult = await pool.request()
+    // 1. Verificar que el grupo existe
+    const grupoResult = await pool.request()
       .input('grupoCursoId', grupoCursoId)
       .query(`
-        SELECT Curso_ID_FK FROM GrupoCurso_TB
+        SELECT 1 FROM GrupoCurso_TB
         WHERE GrupoCurso_ID_PK = @grupoCursoId
       `);
 
-    if (cursoResult.recordset.length === 0) {
+    if (grupoResult.recordset.length === 0) {
       return res.status(404).json({ error: 'GrupoCurso no encontrado' });
     }
 
-    const cursoId = cursoResult.recordset[0].Curso_ID_FK;
-
-    // 2. Obtener todos los grupos relacionados a ese curso
-    const grupos = await pool.request()
-      .input('cursoId', cursoId)
-      .query(`
-        SELECT GrupoCurso_ID_PK FROM GrupoCurso_TB
-        WHERE Curso_ID_FK = @cursoId
-      `);
-
-    const grupoIds = grupos.recordset.map(row => row.GrupoCurso_ID_PK);
-
-    if (grupoIds.length > 0) {
-      // 3. Desvincular profesores de esos grupos
-      await pool.request().query(`
-        DELETE FROM GrupoVinculado_TB
-        WHERE GrupoCurso_ID_FK IN (${grupoIds.join(',')})
-      `);
-
-      // 4. Eliminar los grupos
-      await pool.request().query(`
-        DELETE FROM GrupoCurso_TB
-        WHERE GrupoCurso_ID_PK IN (${grupoIds.join(',')})
-      `);
-    }
-
-    // 5. Eliminar el curso
+    // 2. Desvincular profesores asignados a ese grupo
     await pool.request()
-      .input('cursoId', cursoId)
+      .input('grupoCursoId', grupoCursoId)
       .query(`
-        DELETE FROM CodigoCurso_TB
-        WHERE CodigoCurso_ID_PK = @cursoId
+        DELETE FROM GrupoVinculado_TB
+        WHERE GrupoCurso_ID_FK = @grupoCursoId
       `);
 
-    res.status(200).json({ message: 'Curso eliminado correctamente' });
+    // 3. Eliminar el grupo en sí
+    await pool.request()
+      .input('grupoCursoId', grupoCursoId)
+      .query(`
+        DELETE FROM GrupoCurso_TB
+        WHERE GrupoCurso_ID_PK = @grupoCursoId
+      `);
+
+    res.status(200).json({ message: 'Grupo eliminado correctamente' });
   } catch (error) {
-    console.error('Error eliminando curso:', error);
-    res.status(500).json({ error: 'Error al eliminar el curso' });
+    console.error('Error eliminando grupo del curso:', error);
+    res.status(500).json({ error: 'Error al eliminar el grupo del curso' });
   }
 };
+
 
 
 
