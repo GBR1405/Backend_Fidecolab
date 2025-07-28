@@ -964,27 +964,20 @@ export const eliminarTodosEstudiantes = async (req, res) => {
 
       if (estudiantesIds.length > 0) {
         // 2. Eliminar participaciones
-        await transaction.request()
+         await transaction.request()
           .query(`
             DELETE FROM Participantes_TB 
             WHERE Usuario_ID_FK IN (${estudiantesIds.join(",")})
           `);
 
-        // 3. Eliminar resultados
-        await transaction.request()
-          .query(`
-            DELETE FROM Resultados_TB 
-            WHERE Usuario_ID_FK IN (${estudiantesIds.join(",")})
-          `);
-
-        // 4. Eliminar logros
+        // 2. Eliminar logros
         await transaction.request()
           .query(`
             DELETE FROM Usuario_Logros_TB 
             WHERE Usuario_ID_FK IN (${estudiantesIds.join(",")})
           `);
 
-        // 5. Eliminar vinculaciones a grupos
+        // 3. Eliminar vinculaciones a grupos
         await transaction.request()
           .query(`
             DELETE FROM GrupoVinculado_TB 
