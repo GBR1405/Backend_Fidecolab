@@ -1186,10 +1186,10 @@ export const getFullBitacora = async (req, res) => {
       .query(`
         SELECT 
           b.Bitacora_ID_PK as id,
-          CONCAT(u.Nombre, ' ', u.Apellido1, ' ', u.Apellido2) as usuario,
+          CONCAT(u.Nombre, ' ', u.Apellido1, ' ', ISNULL(u.Apellido2, '')) as usuario,
           u.Correo,
           b.Accion,
-          b.Error,
+          ISNULL(b.Error, 'No aplica') as Error,
           b.Fecha,
           r.Rol
         FROM Bitacora_TB b
@@ -1209,7 +1209,10 @@ export const getFullBitacora = async (req, res) => {
       total: countResult.recordset[0].total,
       page: parseInt(page),
       limit: parseInt(limit),
-      logs: result.recordset
+      logs: result.recordset.map(log => ({
+        ...log,
+        Fecha: new Date(log.Fecha).toISOString() // Asegurar formato de fecha
+      }))
     });
 
   } catch (error) {
