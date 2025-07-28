@@ -1624,10 +1624,39 @@ export const obtenerUsuariosPorGrupoId = async (req, res) => {
 
 // Editar curso por su ID
 export const editarCurso = async (req, res) => {
-  const { cursoId, nuevoNombre, nuevoCodigo } = req.body;
+  const { grupoCursoId, nuevoNombre, nuevoCodigo } = req.body;
 
   try {
     const pool = await poolPromise;
+
+    // 1. Obtener el ID del curso a partir del grupoCursoId
+    const cursoResult = await pool.request()
+      .input('grupoCursoId', grupoCursoId)
+      .query(`
+        SELECT Curso_ID_FK FROM GrupoCurso_TB
+        WHERE GrupoCurso_ID_PK = @grupoCursoId
+      `);
+
+    if (cursoResult.recordset.length === 0) {
+      return res.status(404).json({ error: 'GrupoCurso no encontrado' });
+    }
+
+    const cursoId = cursoResult.recordset[0].Curso_ID_FK;
+
+    // 2. Verificar si ya existe otro curso con el mismo código
+    const codigoExistente = await pool.request()
+      .input('nuevoCodigo', nuevoCodigo)
+      .input('cursoId', cursoId)
+      .query(`
+        SELECT 1 FROM CodigoCurso_TB
+        WHERE Codigo_Curso = @nuevoCodigo AND CodigoCurso_ID_PK != @cursoId
+      `);
+
+    if (codigoExistente.recordset.length > 0) {
+      return res.status(400).json({ error: 'Ya existe otro curso con ese código' });
+    }
+
+    // 3. Editar el curso
     await pool.request()
       .input('cursoId', cursoId)
       .input('nuevoNombre', nuevoNombre)
@@ -1646,14 +1675,29 @@ export const editarCurso = async (req, res) => {
   }
 };
 
+
 // Eliminar un curso, desvinculando primero los profesores
 export const eliminarCurso = async (req, res) => {
-  const { cursoId } = req.body;
+  const { grupoCursoId } = req.body;
 
   try {
     const pool = await poolPromise;
 
-    // Paso 1: Obtener todos los grupos vinculados al curso
+    // 1. Obtener el ID del curso a partir del grupoCursoId
+    const cursoResult = await pool.request()
+      .input('grupoCursoId', grupoCursoId)
+      .query(`
+        SELECT Curso_ID_FK FROM GrupoCurso_TB
+        WHERE GrupoCurso_ID_PK = @grupoCursoId
+      `);
+
+    if (cursoResult.recordset.length === 0) {
+      return res.status(404).json({ error: 'GrupoCurso no encontrado' });
+    }
+
+    const cursoId = cursoResult.recordset[0].Curso_ID_FK;
+
+    // 2. Obtener todos los grupos relacionados a ese curso
     const grupos = await pool.request()
       .input('cursoId', cursoId)
       .query(`
@@ -1664,22 +1708,20 @@ export const eliminarCurso = async (req, res) => {
     const grupoIds = grupos.recordset.map(row => row.GrupoCurso_ID_PK);
 
     if (grupoIds.length > 0) {
-      // Paso 2: Desvincular a todos los profesores de estos grupos
-      await pool.request()
-        .query(`
-          DELETE FROM GrupoVinculado_TB
-          WHERE GrupoCurso_ID_FK IN (${grupoIds.join(',')})
-        `);
+      // 3. Desvincular profesores de esos grupos
+      await pool.request().query(`
+        DELETE FROM GrupoVinculado_TB
+        WHERE GrupoCurso_ID_FK IN (${grupoIds.join(',')})
+      `);
 
-      // Paso 3: Eliminar los grupos
-      await pool.request()
-        .query(`
-          DELETE FROM GrupoCurso_TB
-          WHERE GrupoCurso_ID_PK IN (${grupoIds.join(',')})
-        `);
+      // 4. Eliminar los grupos
+      await pool.request().query(`
+        DELETE FROM GrupoCurso_TB
+        WHERE GrupoCurso_ID_PK IN (${grupoIds.join(',')})
+      `);
     }
 
-    // Paso 4: Eliminar el curso
+    // 5. Eliminar el curso
     await pool.request()
       .input('cursoId', cursoId)
       .query(`
@@ -1693,6 +1735,7 @@ export const eliminarCurso = async (req, res) => {
     res.status(500).json({ error: 'Error al eliminar el curso' });
   }
 };
+
 
 
 
