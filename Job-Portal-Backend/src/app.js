@@ -2698,7 +2698,9 @@ socket.on('selectPuzzlePiece', ({ partidaId, equipoNumero, pieceId, userId }) =>
     game.config.swapsLeft = Math.max(0, game.config.swapsLeft - 1);
 
     // 🧠 Calcular progreso
-    game.state.progress = calculatePuzzleProgress(game.state.pieces);
+    game.state.progress = calculatePuzzleProgress(game.state.pieces); 
+
+    updateTeamProgress(partidaId, equipoNumero, 'Rompecabezas', game.state.progress);
 
     // 💾 Guardar progreso por índice
     const currentIndex = global.partidasConfig?.[partidaId]?.currentIndex || 0;
