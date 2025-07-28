@@ -186,10 +186,9 @@ const GAME_TIMES = {
 
 //Funciones extras
 
-function getBlankCanvasData() {
-  // Crear un canvas blanco básico en base64
-  return 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAyAAAAJYCAYAAACadoJwAAABhGlDQ1BJQ0MgcHJvZmlsZQAAKJF9kT1Iw0AcxV9TpSIVBzuIOGSoThZERRylikWwUNoKrTqYXPohNGlIUlwcBdeCgx+LVQcXZ10dXAVB8APE1cVJ0UVK/F9SaBHjwXE/3t173L0DhGaVqWbPOKBqlpFOxMVcflUMvCKIEYQxICJTT2YWM/AcX/fw8fUuyrO8z/05BpWCyQCfSDzHdMMi3iCe2bR0zvvEYVaWFOJz4nGDLkj8yHXZ5TfOJYcFnhk2Mul54jCxWOpiuYvZsqmJJ4mjqq5TvpDzWeW8xVkrV1nznvyF4YK+ssx12iNIYBFLkCBCQR0VVGEhRqtGiok07Sc8/KOOXySXTK4KGDkWUIcK2Q2D/8Hv2VqFqUkvKRQHAi+O8zEKBHaBVsNxvo/jVKsngP8ZuNI6/loTmP0kvdHRYkdA/zZwcd3R5D3gcgcYfDJkU3alIE2hWATez+ib8kD/LdC75vXW2sfpA5ClrpZugINDYKxE2ese7+7p7O3fM63+fgDFjHLGfzUsagAAAAlwSFlzAAAuIwAALiMBeKU/dgAAAAd0SU1FB+gGEwwQAJbzYYQAAAAZdEVYdENvbW1lbnQAQ3JlYXRlZCB3aXRoIEdJTVBXgQ4XAAAACklEQVQI12NgAAAAAgAB4iG8MwAAAABJRU5ErkJggg==';
-}
+
+
+// Función para calcular el progreso del rompecabezas
 
 // En app.js, modificar la función generatePuzzlePieces:
 function generatePuzzlePieces(size, imageUrl, seed) {
@@ -2412,6 +2411,11 @@ socket.on('saveDrawing', ({ partidaId, equipoNumero, imageData }) => {
   });
 });
 
+// Función auxiliar para canvas blanco
+function getBlankCanvasData() {
+  // Crear un canvas blanco básico en base64
+  return 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAyAAAAJYCAYAAACadoJwAAABhGlDQ1BJQ0MgcHJvZmlsZQAAKJF9kT1Iw0AcxV9TpSIVBzuIOGSoThZERRylikWwUNoKrTqYXPohNGlIUlwcBdeCgx+LVQcXZ10dXAVB8APE1cVJ0UVK/F9SaBHjwXE/3t173L0DhGaVqWbPOKBqlpFOxMVcflUMvCKIEYQxICJTT2YWM/AcX/fw8fUuyrO8z/05BpWCyQCfSDzHdMMi3iCe2bR0zvvEYVaWFOJz4nGDLkj8yHXZ5TfOJYcFnhk2Mul54jCxWOpiuYvZsqmJJ4mjqq5TvpDzWeW8xVkrV1nznvyF4YK+ssx12iNIYBFLkCBCQR0VVGEhRqtGiok07Sc8/KOOXySXTK4KGDkWUIcK2Q2D/8Hv2VqFqUkvKRQHAi+O8zEKBHaBVsNxvo/jVKsngP8ZuNI6/loTmP0kvdHRYkdA/zZwcd3R5D3gcgcYfDJkU3alIE2hWATez+ib8kD/LdC75vXW2sfpA5ClrpZugINDYKxE2ese7+7p7O3fM63+fgDFjHLGfzUsagAAAAlwSFlzAAAuIwAALiMBeKU/dgAAAAd0SU1FB+gGEwwQAJbzYYQAAAAZdEVYdENvbW1lbnQAQ3JlYXRlZCB3aXRoIEdJTVBXgQ4XAAAACklEQVQI12NgAAAAAgAB4iG8MwAAAABJRU5ErkJggg==';
+}
 
 socket.on('getAllDrawings', (partidaId, callback) => {
   callback(drawingDemonstration[partidaId] || {});
@@ -2822,6 +2826,7 @@ async function renderDrawingToBase64(partidaId, equipoNumero) {
   // 2. Convertir SVG a PNG usando svg2img
   return new Promise((resolve, reject) => {
     try {
+      const svg2img = require('svg2img');
       svg2img(svg, { format: 'png', width, height }, (error, buffer) => {
         if (error) {
           console.error('Error al convertir SVG a PNG:', error);
@@ -3488,21 +3493,11 @@ async function generarResultadosJuegoActual(partidaId) {
           }
         } else if (juegoActual.tipo === "Dibujo") {
           try {
-            const gameId = `drawing-${partidaId}-${equipoNumero}`;
-            const game = drawingGames[gameId];
-            
-            // Si ya hay una imagen guardada, usarla
-            if (game && game.imageData) {
-              comentario = game.imageData;
-            } else {
-              // Si no hay imagen guardada, generarla
-              comentario = await renderDrawingToBase64(partidaId, equipoNumero);
-            }
-            
+            comentario = await renderDrawingToBase64(partidaId, equipoNumero);
             progreso = "Dibujo completado"; 
           } catch (error) {
             console.error('Error al generar imagen:', error);
-            comentario = getBlankCanvasData(); // Usar canvas en blanco en caso de error
+            comentario = "Error al generar el dibujo";
           }
         }
       }
