@@ -447,12 +447,12 @@ export const eliminarUsuario = async (req, res) => {
           .input("userId", sql.Int, userId)
           .query("DELETE FROM Participantes_TB WHERE Usuario_ID_FK = @userId");
 
-        // 3. Eliminar logros
+        // 2. Eliminar logros del estudiante
         await transaction.request()
           .input("userId", sql.Int, userId)
           .query("DELETE FROM Usuario_Logros_TB WHERE Usuario_ID_FK = @userId");
 
-        // 4. Eliminar vinculaciones a grupos
+        // 3. Eliminar vinculaciones a grupos
         await transaction.request()
           .input("userId", sql.Int, userId)
           .query("DELETE FROM GrupoVinculado_TB WHERE Usuario_ID_FK = @userId");
@@ -473,10 +473,17 @@ export const eliminarUsuario = async (req, res) => {
               WHERE Partida_ID_FK IN (${partidasIds.join(",")})
             `);
 
-          // 4. Eliminar logros de esas partidas
+          // 3. Eliminar logros de esas partidas
           await transaction.request()
             .query(`
               DELETE FROM Usuario_Logros_TB 
+              WHERE Partida_ID_FK IN (${partidasIds.join(",")})
+            `);
+
+          // 4. Eliminar resultados de esas partidas (si es necesario)
+          await transaction.request()
+            .query(`
+              DELETE FROM Resultados_TB 
               WHERE Partida_ID_FK IN (${partidasIds.join(",")})
             `);
         }
@@ -486,16 +493,24 @@ export const eliminarUsuario = async (req, res) => {
           .input("userId", sql.Int, userId)
           .query("DELETE FROM Partida_TB WHERE Profesor_ID_FK = @userId");
 
-        // 6. Eliminar personalizaciones del profesor
+        // 6. Eliminar configuraciones de juego del profesor
         await transaction.request()
           .input("userId", sql.Int, userId)
-          .query("DELETE FROM ConfiguracionJuego_TB WHERE Personalizacion_ID_PK IN (SELECT Personalizacion_ID_PK FROM Personalizacion_TB WHERE Usuario_ID_FK = @userId)");
+          .query(`
+            DELETE FROM ConfiguracionJuego_TB 
+            WHERE Personalizacion_ID_PK IN (
+              SELECT Personalizacion_ID_PK 
+              FROM Personalizacion_TB 
+              WHERE Usuario_ID_FK = @userId
+            )
+          `);
 
+        // 7. Eliminar personalizaciones del profesor
         await transaction.request()
           .input("userId", sql.Int, userId)
           .query("DELETE FROM Personalizacion_TB WHERE Usuario_ID_FK = @userId");
 
-        // 7. Eliminar vinculaciones a grupos
+        // 8. Eliminar vinculaciones a grupos
         await transaction.request()
           .input("userId", sql.Int, userId)
           .query("DELETE FROM GrupoVinculado_TB WHERE Usuario_ID_FK = @userId");
@@ -517,12 +532,17 @@ export const eliminarUsuario = async (req, res) => {
 
     } catch (error) {
       await transaction.rollback();
+      console.error("Error en transacción al eliminar usuario:", error);
       throw error;
     }
 
   } catch (error) {
     console.error("Error al eliminar usuario:", error);
-    return res.status(500).json({ success: false, message: "Error al eliminar usuario" });
+    return res.status(500).json({ 
+      success: false, 
+      message: "Error al eliminar usuario",
+      error: error.message 
+    });
   }
 };
 
