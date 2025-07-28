@@ -1622,6 +1622,78 @@ export const obtenerUsuariosPorGrupoId = async (req, res) => {
     }
 };
 
+// Editar curso por su ID
+export const editarCurso = async (req, res) => {
+  const { cursoId, nuevoNombre, nuevoCodigo } = req.body;
+
+  try {
+    const pool = await poolPromise;
+    await pool.request()
+      .input('cursoId', cursoId)
+      .input('nuevoNombre', nuevoNombre)
+      .input('nuevoCodigo', nuevoCodigo)
+      .query(`
+        UPDATE CodigoCurso_TB
+        SET Nombre_Curso = @nuevoNombre,
+            Codigo_Curso = @nuevoCodigo
+        WHERE CodigoCurso_ID_PK = @cursoId
+      `);
+
+    res.status(200).json({ message: 'Curso editado correctamente' });
+  } catch (error) {
+    console.error('Error editando curso:', error);
+    res.status(500).json({ error: 'Error al editar el curso' });
+  }
+};
+
+// Eliminar un curso, desvinculando primero los profesores
+export const eliminarCurso = async (req, res) => {
+  const { cursoId } = req.body;
+
+  try {
+    const pool = await poolPromise;
+
+    // Paso 1: Obtener todos los grupos vinculados al curso
+    const grupos = await pool.request()
+      .input('cursoId', cursoId)
+      .query(`
+        SELECT GrupoCurso_ID_PK FROM GrupoCurso_TB
+        WHERE Curso_ID_FK = @cursoId
+      `);
+
+    const grupoIds = grupos.recordset.map(row => row.GrupoCurso_ID_PK);
+
+    if (grupoIds.length > 0) {
+      // Paso 2: Desvincular a todos los profesores de estos grupos
+      await pool.request()
+        .query(`
+          DELETE FROM GrupoVinculado_TB
+          WHERE GrupoCurso_ID_FK IN (${grupoIds.join(',')})
+        `);
+
+      // Paso 3: Eliminar los grupos
+      await pool.request()
+        .query(`
+          DELETE FROM GrupoCurso_TB
+          WHERE GrupoCurso_ID_PK IN (${grupoIds.join(',')})
+        `);
+    }
+
+    // Paso 4: Eliminar el curso
+    await pool.request()
+      .input('cursoId', cursoId)
+      .query(`
+        DELETE FROM CodigoCurso_TB
+        WHERE CodigoCurso_ID_PK = @cursoId
+      `);
+
+    res.status(200).json({ message: 'Curso eliminado correctamente' });
+  } catch (error) {
+    console.error('Error eliminando curso:', error);
+    res.status(500).json({ error: 'Error al eliminar el curso' });
+  }
+};
+
 
 
 
