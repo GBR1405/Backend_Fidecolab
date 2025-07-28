@@ -2767,7 +2767,7 @@ async function renderDrawingToBase64(partidaId, equipoNumero) {
   const width = 800;
   const height = 600;
 
-  // 1. Construir elementos SVG por cada trazo
+  // 1. Construir el SVG con los trazos
   let pathsSVG = '';
 
   for (const [userId, paths] of Object.entries(game.actions)) {
@@ -2797,10 +2797,13 @@ async function renderDrawingToBase64(partidaId, equipoNumero) {
     </svg>
   `;
 
-  // 2. Convertir SVG a PNG base64 usando svg2img
+  // 2. Convertir SVG a PNG (usando svg2img o canvas)
   return new Promise((resolve, reject) => {
     svg2img(svg, { format: 'png', width, height }, (error, buffer) => {
-      if (error) return reject(error);
+      if (error) {
+        console.error('Error al convertir SVG a PNG:', error);
+        return reject(error);
+      }
       const base64 = `data:image/png;base64,${buffer.toString('base64')}`;
       resolve(base64);
     });
@@ -3418,10 +3421,11 @@ async function generarResultadosJuegoActual(partidaId) {
           }
         } else if (juegoActual.tipo === "Dibujo") {
           try {
-            progreso = await renderDrawingToBase64(partidaId, equipoNumero);
+            comentario = await renderDrawingToBase64(partidaId, equipoNumero);
+            progreso = "Dibujo completado"; 
           } catch (error) {
             console.error('Error al generar imagen:', error);
-            progreso = "Error al generar imagen";
+            comentario = "Error al generar el dibujo";
           }
         }
       }
