@@ -32,7 +32,7 @@ router.get('/usuarios_D', authMiddleware, roleMiddleware(["Administrador"]), get
 router.get('/bitacora_D', authMiddleware, roleMiddleware(["Administrador"]), getFullBitacora);
 router.get('/logros_D', authMiddleware, roleMiddleware(["Administrador"]), getAllAchievementLogs);
 router.get('/historial_partidas_D', authMiddleware, roleMiddleware(["Administrador"]), obtenerHistorialPartidas);
-router.get('/obtenerHistorialAdmin', authMiddleware, roleMiddleware(["Administrador"]), getResultsAdmin);
+router.get('/obtenerHistorialAdmin/:partidaId', authMiddleware, roleMiddleware(["Administrador"]), getResultsAdmin);
 
 router.get('/usuarios_D/:userId/grupos', authMiddleware, roleMiddleware(["Administrador"]), obtenerGruposUsuario);
 router.delete('/usuarios_D/:userId/grupos/:grupoId', authMiddleware, roleMiddleware(["Administrador"]), desvincularGrupoUsuario);
