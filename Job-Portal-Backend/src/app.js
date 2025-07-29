@@ -161,39 +161,24 @@ const DRAWING_CONFIG = {
 
 const VOTING_TIME = 5000;
 
-const PUZZLE_CONFIG = {
-  'Fácil': { size: 3, pieceSize: 150 },
-  'Normal': { size: 4, pieceSize: 120 },
-  'Difícil': { size: 5, pieceSize: 100 }
-};
-
-
-// Configuración de tiempos por juego y dificultad
-const GAME_TIMES = {
-  'Dibujo': {
-    'facil': 7 * 60,    // 7 minutos en segundos
-    'normal': 5 * 60,    // 5 minutos en segundos
-    'dificil': 3 * 60    // 3 minutos en segundos
-  },
-  'Ahorcado': {
-    'facil': 7 * 60,
-    'normal': 5 * 60,
-    'dificil': 3 * 60
-  },
-  'Memoria': 4.5 * 60,   // 4.5 minutos en segundos
-  'Rompecabezas': 4.5 * 60
-};
-
 //Funciones extras
 
 // Agregar esta función antes del evento nextGame
 async function guardarDibujosActuales(partidaId) {
   try {
+    console.log(`[SAVE] Iniciando guardado de dibujos para partida ${partidaId}`);
+    
     const config = global.partidasConfig[partidaId];
-    if (!config) return;
+    if (!config) {
+      console.log(`[SAVE] No se encontró configuración para partida ${partidaId}`);
+      return;
+    }
     
     const currentGame = config.juegos[config.currentIndex];
-    if (currentGame.tipo !== 'Dibujo') return;
+    if (currentGame.tipo !== 'Dibujo') {
+      console.log(`[SAVE] Juego actual no es de dibujo: ${currentGame.tipo}`);
+      return;
+    }
     
     // Obtener todos los equipos de la partida
     const pool = await poolPromise;
@@ -201,25 +186,40 @@ async function guardarDibujosActuales(partidaId) {
       .input('partidaId', sql.Int, partidaId)
       .query('SELECT DISTINCT Equipo_Numero FROM Participantes_TB WHERE Partida_ID_FK = @partidaId');
     
+    console.log(`[SAVE] Equipos encontrados: ${result.recordset.map(r => r.Equipo_Numero).join(', ')}`);
+    
     // Guardar dibujo de cada equipo
     for (const row of result.recordset) {
       const equipoNumero = row.Equipo_Numero;
       const gameId = `drawing-${partidaId}-${equipoNumero}`;
       
-      if (drawingGames[gameId] && !drawingGames[gameId].imageData) {
+      console.log(`[SAVE] Procesando equipo ${equipoNumero}, gameId: ${gameId}`);
+      
+      // Verificar si el juego existe
+      if (!drawingGames[gameId]) {
+        console.log(`[SAVE] No se encontró juego para ${gameId}, creando estructura vacía`);
+        drawingGames[gameId] = { actions: {}, tintaStates: {}, imageData: null };
+      }
+      
+      // Solo procesar si no tiene imagen guardada
+      if (!drawingGames[gameId].imageData) {
         try {
-          // Generar imagen desde los trazos
+          console.log(`[SAVE] Generando imagen para equipo ${equipoNumero}`);
           const imageData = await renderDrawingToBase64(partidaId, equipoNumero);
           drawingGames[gameId].imageData = imageData;
-          console.log(`Dibujo guardado automáticamente para partida ${partidaId}, equipo ${equipoNumero}`);
+          console.log(`[SAVE] ✅ Dibujo guardado para partida ${partidaId}, equipo ${equipoNumero}`);
         } catch (error) {
-          console.error(`Error guardando dibujo para equipo ${equipoNumero}:`, error);
+          console.error(`[SAVE] ❌ Error guardando dibujo para equipo ${equipoNumero}:`, error);
           drawingGames[gameId].imageData = getBlankCanvasData();
         }
+      } else {
+        console.log(`[SAVE] Equipo ${equipoNumero} ya tiene imagen guardada`);
       }
     }
+    
+    console.log(`[SAVE] Finalizado guardado de dibujos para partida ${partidaId}`);
   } catch (error) {
-    console.error('Error en guardarDibujosActuales:', error);
+    console.error('[SAVE] Error en guardarDibujosActuales:', error);
   }
 }
 
@@ -332,44 +332,6 @@ async function getGameConfig(personalizacionId) {
   }
 }
 
-// 2. Función para generar IDs consistentes
-function generateConsistentId(partidaId, equipoNumero, row, col) {
-  return `piece-${partidaId}-${equipoNumero}-${row}-${col}`;
-}
-
-// 3. Función para generar el puzzle de forma consistente
-function generatePuzzle(partidaId, equipoNumero, difficulty, imageUrl) {
-  const sizes = { 'facil': 5, 'normal': 7, 'dificil': 8 };
-  const size = sizes[difficulty.toLowerCase()] || 5;
-  const pieceSize = 100;
-  const pieces = [];
-
-  // Semilla consistente
-  const seed = `${partidaId}-${equipoNumero}`;
-  const rng = seedrandom(seed);
-
-  for (let row = 0; row < size; row++) {
-    for (let col = 0; col < size; col++) {
-      const index = row * size + col;
-      pieces.push({
-        id: `piece-${partidaId}-${equipoNumero}-${row}-${col}`,
-        row,
-        col,
-        correctX: col * pieceSize,
-        correctY: row * pieceSize,
-        currentX: Math.floor(rng() * 500),
-        currentY: Math.floor(rng() * 500),
-        locked: false,
-        size: pieceSize,
-        topEdge: row === 0 ? 'flat' : (rng() > 0.5 ? 'tab' : 'blank'),
-        rightEdge: col === size-1 ? 'flat' : (rng() > 0.5 ? 'tab' : 'blank'),
-        bottomEdge: row === size-1 ? 'flat' : (rng() > 0.5 ? 'tab' : 'blank'),
-        leftEdge: col === 0 ? 'flat' : (rng() > 0.5 ? 'tab' : 'blank')
-      });
-    }
-  }
-  return pieces;
-}
 
 function startGameTimer(partidaId, gameType, difficulty = null) {
   // Detener el temporizador anterior si existe
@@ -2214,35 +2176,42 @@ socket.on('getDrawingState', ({ partidaId, equipoNumero }, callback) => {
 socket.on('saveDrawing', async ({ partidaId, equipoNumero, imageData }) => {
   const gameId = `drawing-${partidaId}-${equipoNumero}`;
   
+  console.log(`[MANUAL_SAVE] Guardado manual solicitado para ${gameId}`);
+  
   if (!drawingGames[gameId]) {
-    drawingGames[gameId] = { actions: {}, imageData: null };
+    drawingGames[gameId] = { actions: {}, tintaStates: {}, imageData: null };
   }
   
-  // Si se proporciona imageData, usarlo directamente
+  // Si se proporciona imageData directamente, usarlo
   if (imageData && imageData.startsWith('data:image')) {
     drawingGames[gameId].imageData = imageData;
-    console.log(`Imagen guardada directamente para partida ${partidaId}, equipo ${equipoNumero}`);
+    console.log(`[MANUAL_SAVE] ✅ Imagen guardada directamente para partida ${partidaId}, equipo ${equipoNumero}`);
   } else {
     // Si no hay imageData, generar desde los trazos
     try {
+      console.log(`[MANUAL_SAVE] Generando imagen desde trazos para partida ${partidaId}, equipo ${equipoNumero}`);
       const generatedImageData = await renderDrawingToBase64(partidaId, equipoNumero);
       drawingGames[gameId].imageData = generatedImageData;
-      console.log(`Imagen generada para partida ${partidaId}, equipo ${equipoNumero}`);
+      console.log(`[MANUAL_SAVE] ✅ Imagen generada para partida ${partidaId}, equipo ${equipoNumero}`);
     } catch (error) {
-      console.error(`Error al generar imagen para partida ${partidaId}, equipo ${equipoNumero}:`, error);
-      // En caso de error, usar un canvas en blanco
+      console.error(`[MANUAL_SAVE] ❌ Error al generar imagen para partida ${partidaId}, equipo ${equipoNumero}:`, error);
       drawingGames[gameId].imageData = getBlankCanvasData();
     }
   }
   
   // Actualizar demostración si está activa
-  if (drawingDemonstrations[partidaId]) {
-    if (!drawingDemonstrations[partidaId].drawings) {
-      drawingDemonstrations[partidaId].drawings = {};
-    }
-    drawingDemonstrations[partidaId].drawings[equipoNumero] = drawingGames[gameId].imageData;
+  if (drawingDemoState[partidaId]?.active) {
+    console.log(`[MANUAL_SAVE] Actualizando demostración para partida ${partidaId}`);
     io.to(`partida_${partidaId}`).emit('drawingUpdated', { equipoNumero });
   }
+  
+  // Confirmar al cliente que se guardó
+  socket.emit('drawingSaved', { 
+    partidaId, 
+    equipoNumero, 
+    success: true,
+    hasImage: !!drawingGames[gameId].imageData 
+  });
 });
 
 socket.on('getTeamDrawings', ({ partidaId, equipoNumero }, callback) => {
@@ -2815,64 +2784,95 @@ async function renderDrawingToBase64(partidaId, equipoNumero) {
   const gameId = `drawing-${partidaId}-${equipoNumero}`;
   const game = drawingGames[gameId];
 
+  console.log(`[DEBUG] Intentando generar imagen para ${gameId}`);
+  console.log(`[DEBUG] Game exists:`, !!game);
+  console.log(`[DEBUG] Actions exists:`, !!game?.actions);
+  console.log(`[DEBUG] Actions keys:`, Object.keys(game?.actions || {}));
+
   if (!game || !game.actions || Object.keys(game.actions).length === 0) {
-    console.log(`No hay trazos para partida ${partidaId}, equipo ${equipoNumero}, devolviendo canvas en blanco`);
-    // Devolver un canvas en blanco en lugar de lanzar un error
+    console.log(`[DEBUG] No hay trazos para partida ${partidaId}, equipo ${equipoNumero}, devolviendo canvas en blanco`);
     return getBlankCanvasData();
   }
 
   const width = 800;
   const height = 600;
 
-  // 1. Construir el SVG con los trazos
+  // Construir el SVG con los trazos
   let pathsSVG = '';
+  let totalPaths = 0;
 
   for (const [userId, paths] of Object.entries(game.actions)) {
-    if (!paths || !Array.isArray(paths)) continue;
+    if (!paths || !Array.isArray(paths)) {
+      console.log(`[DEBUG] Paths inválidos para usuario ${userId}`);
+      continue;
+    }
+    
+    console.log(`[DEBUG] Usuario ${userId} tiene ${paths.length} trazos`);
     
     for (const path of paths) {
-      if (!path.points || !Array.isArray(path.points) || path.points.length === 0) continue;
+      if (!path.points || !Array.isArray(path.points) || path.points.length === 0) {
+        console.log(`[DEBUG] Path sin puntos válidos:`, path);
+        continue;
+      }
 
-      const d = path.points.map((p, i) =>
-        `${i === 0 ? 'M' : 'L'}${p.x},${p.y}`
-      ).join(' ');
+      const d = path.points.map((p, i) => {
+        // Validar que el punto tenga coordenadas válidas
+        if (typeof p.x !== 'number' || typeof p.y !== 'number') {
+          console.log(`[DEBUG] Punto inválido:`, p);
+          return '';
+        }
+        return `${i === 0 ? 'M' : 'L'}${p.x},${p.y}`;
+      }).filter(segment => segment !== '').join(' ');
 
-      pathsSVG += `
-        <path d="${d}"
-          stroke="${path.color || 'black'}"
-          stroke-width="${path.strokeWidth || 2}"
-          fill="none"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-        />
-      `;
+      if (d.length > 0) {
+        pathsSVG += `
+          <path d="${d}"
+            stroke="${path.color || '#000000'}"
+            stroke-width="${path.strokeWidth || 2}"
+            fill="none"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          />
+        `;
+        totalPaths++;
+      }
     }
   }
 
+  console.log(`[DEBUG] Total de paths generados: ${totalPaths}`);
+
   const svg = `
-    <svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">
+    <svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
       <rect width="100%" height="100%" fill="white"/>
       ${pathsSVG}
     </svg>
   `;
 
-  console.log(`Generando SVG para partida ${partidaId}, equipo ${equipoNumero}`);
+  console.log(`[DEBUG] SVG generado (${svg.length} caracteres)`);
   
-  // 2. Convertir SVG a PNG usando svg2img
+  // Convertir SVG a PNG usando svg2img
   return new Promise((resolve, reject) => {
     try {
       svg2img(svg, { format: 'png', width, height }, (error, buffer) => {
         if (error) {
-          console.error('Error al convertir SVG a PNG:', error);
-          return reject(error);
+          console.error('[ERROR] Error al convertir SVG a PNG:', error);
+          resolve(getBlankCanvasData()); // En lugar de reject, devolver canvas en blanco
+          return;
         }
+        
+        if (!buffer || buffer.length === 0) {
+          console.error('[ERROR] Buffer vacío al convertir SVG');
+          resolve(getBlankCanvasData());
+          return;
+        }
+        
         const base64 = `data:image/png;base64,${buffer.toString('base64')}`;
-        console.log(`Base64 generado correctamente para partida ${partidaId}, equipo ${equipoNumero}`);
+        console.log(`[SUCCESS] Base64 generado correctamente para partida ${partidaId}, equipo ${equipoNumero} (${base64.length} caracteres)`);
         resolve(base64);
       });
     } catch (error) {
-      console.error('Error al usar svg2img:', error);
-      reject(error);
+      console.error('[ERROR] Error al usar svg2img:', error);
+      resolve(getBlankCanvasData()); // En lugar de reject, devolver canvas en blanco
     }
   });
 }
@@ -2906,210 +2906,73 @@ async function evaluarLogrosGrupales(partidaId, resultadosPorEquipo) {
     console.log(`[LOGROS] Evaluando logros grupales para partida ${partidaId}`);
     const pool = await poolPromise;
     
-    // 1. Calcular puntuación por equipo
-    const equiposConPuntuacion = [];
-    
-    for (const equipo of resultadosPorEquipo) {
-      const equipoNumero = equipo.equipo;
-      let puntuacionTotal = 0;
-      let juegosCompletados = 0;
-      let juegosAl100 = 0;
-      let totalJuegos = equipo.juegos.length;
-      
-      // Calcular puntuación (MAYOR es mejor - nuevo sistema)
-      for (const juego of equipo.juegos) {
-        // Verificar si el juego fue participado
-        if (!juego.comentario || !juego.comentario.includes('No Participado')) {
-          juegosCompletados++;
-          
-          // Calcular puntuación según progreso
-          let progreso = 0;
-          
-          if (juego.tipoJuego === 'Memoria') {
-            // Formato: "X/Y"
-            const partes = juego.progreso.split('/');
-            if (partes.length === 2) {
-              const [encontrados, total] = partes.map(Number);
-              progreso = total > 0 ? (encontrados / total) * 100 : 0;
-              if (progreso >= 100) juegosAl100++;
-            }
-          } else if (juego.tipoJuego === 'Rompecabezas' || juego.tipoJuego === 'Dibujo') {
-            // Formato: "X%" o puede ser un valor numérico
-            const progresoStr = String(juego.progreso).replace('%', '');
-            progreso = parseFloat(progresoStr);
-            if (progreso >= 100) juegosAl100++;
-          } else if (juego.tipoJuego === 'Ahorcado') {
-            // Formato: "X/Y" donde X son letras acertadas y Y son errores
-            const partes = juego.progreso.split('/');
-            if (partes.length === 2) {
-              const [acertadas, errores] = partes.map(Number);
-              // Consideramos completado si hay más aciertos que errores
-              if (acertadas > errores) juegosAl100++;
-              progreso = acertadas > 0 ? 100 : 50; // Simplificación
-            }
-          }
-          
-          // Puntuación directa: 100% = 100 puntos, 0% = 0 puntos
-          puntuacionTotal += progreso;
-        }
-      }
-      
-      // Factor de ajuste: equipos que juegan más juegos tienen ventaja
-      const factorParticipacion = juegosCompletados / totalJuegos;
-      const puntuacionAjustada = puntuacionTotal * factorParticipacion;
-      
-      equiposConPuntuacion.push({
-        equipoNumero,
-        puntuacion: puntuacionAjustada,
-        juegosCompletados,
-        juegosAl100,
-        totalJuegos
-      });
-    }
-    
-    // Ordenar por puntuación (MAYOR es mejor)
-    equiposConPuntuacion.sort((a, b) => b.puntuacion - a.puntuacion);
-    
-    console.log("[POSICIONES FINALES]", equiposConPuntuacion);
-    
-    // 2. Asignar logros por posición
-    const logrosPos = [
-      { nombre: 'Coordinación Perfecta', descripcion: 'Tu grupo quedó en primer lugar' },
-      { nombre: 'Trabajo en equipo poderoso', descripcion: 'Tu grupo quedó en segundo lugar' },
-      { nombre: 'Apoyo entre todos', descripcion: 'Tu grupo quedó en tercer lugar' }
-    ];
-    
-    // Manejar empates (misma puntuación = misma posición)
-    let posicionActual = 0;
-    let puntuacionAnterior = -1;
-    
-    for (let i = 0; i < equiposConPuntuacion.length; i++) {
-      const equipo = equiposConPuntuacion[i];
-      
-      // Si la puntuación es diferente, avanzamos posición
-      if (equipo.puntuacion !== puntuacionAnterior) {
-        posicionActual = i;
-        puntuacionAnterior = equipo.puntuacion;
-      }
-      
-      // Solo asignamos logros a las primeras 3 posiciones
-      if (posicionActual < 3) {
-        const logro = logrosPos[posicionActual];
-        
-        // Obtener participantes del equipo
-        const participantesResult = await pool.request()
-          .input('partidaId', sql.Int, partidaId)
-          .input('equipoNumero', sql.Int, equipo.equipoNumero)
-          .query(`
-            SELECT Usuario_ID_FK 
-            FROM Participantes_TB 
-            WHERE Partida_ID_FK = @partidaId AND Equipo_Numero = @equipoNumero
-          `);
-        
-        // Asignar logro a cada participante
-        for (const participante of participantesResult.recordset) {
-          await asignarLogro(participante.Usuario_ID_FK, logro.nombre, 'grupo', partidaId);
-        }
-        
-        console.log(`[LOGRO] Equipo ${equipo.equipoNumero} obtuvo "${logro.nombre}" (Posición ${posicionActual + 1})`);
-      }
-    }
-    
-    // 3. Asignar logros por juego terminado
-    const logrosPorJuego = {
+    // Mapeo de tipos de juego a logros grupales
+    const logrosGrupoPorJuego = {
       'Dibujo': 'Artista',
       'Ahorcado': 'Adivinador (Grupo)',
       'Memoria': 'Buena vista',
       'Rompecabezas': 'Gran talento'
     };
-    
-    // Eliminar la restricción para juegos de dibujo
-    // Establecer hayJuegoNoEsDibujo como true siempre
-    const hayJuegoNoEsDibujo = true;
-    
-    // Procesar todos los equipos y juegos
-    for (const equipo of resultadosPorEquipo) {
+
+    // Procesar todos los equipos en paralelo
+    const promesasEquipos = resultadosPorEquipo.map(async (equipo) => {
       const equipoNumero = equipo.equipo;
-      const tiposJuegosCompletados = new Set();
-      let todosAl100 = true;
+      const tiposJuegosJugados = new Set();
       
-      // Verificar juegos completados
+      // Obtener participantes del equipo una sola vez
+      const participantesResult = await pool.request()
+        .input('partidaId', sql.Int, partidaId)
+        .input('equipoNumero', sql.Int, equipoNumero)
+        .query(`
+          SELECT Usuario_ID_FK 
+          FROM Participantes_TB 
+          WHERE Partida_ID_FK = @partidaId AND Equipo_Numero = @equipoNumero
+        `);
+
+      const participantes = participantesResult.recordset.map(p => p.Usuario_ID_FK);
+      
+      // Verificar juegos jugados por el equipo
       for (const juego of equipo.juegos) {
-        if (!juego.comentario || !juego.comentario.includes('No Participado')) {
-          tiposJuegosCompletados.add(juego.tipoJuego);
-          
-          // Verificar si el juego está al 100%
-          let progresoCompleto = false;
-          
-          if (juego.tipoJuego === 'Memoria') {
-            const partes = juego.progreso.split('/');
-            if (partes.length === 2) {
-              const [encontrados, total] = partes.map(Number);
-              progresoCompleto = encontrados === total;
-            }
-          } else if (juego.tipoJuego === 'Rompecabezas') {
-            progresoCompleto = juego.progreso === '100%' || juego.progreso === 100;
-          } else if (juego.tipoJuego === 'Dibujo') {
-            // Para dibujo consideramos que siempre está completo si participaron
-            progresoCompleto = true;
-          } else if (juego.tipoJuego === 'Ahorcado') {
-            const partes = juego.progreso.split('/');
-            if (partes.length === 2) {
-              const [acertadas, errores] = partes.map(Number);
-              progresoCompleto = acertadas > 0 && errores < 6; // Simplificación
-            }
-          }
-          
-          if (!progresoCompleto) {
-            todosAl100 = false;
-          }
-          
-          // Asignar logro por tipo de juego (aunque no esté al 100%)
-          if (logrosPorJuego[juego.tipoJuego]) {
-            const participantesResult = await pool.request()
-              .input('partidaId', sql.Int, partidaId)
-              .input('equipoNumero', sql.Int, equipoNumero)
-              .query(`
-                SELECT Usuario_ID_FK 
-                FROM Participantes_TB 
-                WHERE Partida_ID_FK = @partidaId AND Equipo_Numero = @equipoNumero
-              `);
-            
-            for (const participante of participantesResult.recordset) {
-              await asignarLogro(participante.Usuario_ID_FK, logrosPorJuego[juego.tipoJuego], 'grupo', partidaId);
-            }
-            
-            console.log(`[LOGRO] Equipo ${equipoNumero} obtuvo "${logrosPorJuego[juego.tipoJuego]}" por completar ${juego.tipoJuego}`);
-          }
+        // Si NO tiene "Juego No Participado" en comentarios, entonces jugó
+        if (!juego.comentario || !juego.comentario.includes('Juego No Participado')) {
+          tiposJuegosJugados.add(juego.tipoJuego);
         }
       }
+
+      // Asignar logros por tipo de juego jugado
+      const promesasLogros = [];
       
-      // 4. Asignar logros por completar todos los juegos
-      if (tiposJuegosCompletados.size > 0) {
-        const participantesResult = await pool.request()
-          .input('partidaId', sql.Int, partidaId)
-          .input('equipoNumero', sql.Int, equipoNumero)
-          .query(`
-            SELECT Usuario_ID_FK 
-            FROM Participantes_TB 
-            WHERE Partida_ID_FK = @partidaId AND Equipo_Numero = @equipoNumero
-          `);
-        
-        // Logro "Trabajo en equipo" si jugaron al menos un juego
-        for (const participante of participantesResult.recordset) {
-          await asignarLogro(participante.Usuario_ID_FK, 'Trabajo en equipo', 'grupo', partidaId);
-        }
-        console.log(`[LOGRO] Equipo ${equipoNumero} obtuvo "Trabajo en equipo" por participar en al menos un juego`);
-        
-        // Logro adicional "Final Perfecto" si todos están al 100%
-        if (todosAl100 && tiposJuegosCompletados.size === new Set(equipo.juegos.map(j => j.tipoJuego)).size) {
-          for (const participante of participantesResult.recordset) {
-            await asignarLogro(participante.Usuario_ID_FK, 'Final Perfecto', 'grupo', partidaId);
+      for (const tipoJuego of tiposJuegosJugados) {
+        if (logrosGrupoPorJuego[tipoJuego]) {
+          const nombreLogro = logrosGrupoPorJuego[tipoJuego];
+          
+          // Asignar a todos los participantes del equipo
+          for (const usuarioId of participantes) {
+            promesasLogros.push(
+              asignarLogro(usuarioId, nombreLogro, 'grupo', partidaId)
+            );
           }
-          console.log(`[LOGRO] Equipo ${equipoNumero} obtuvo "Final Perfecto" por completar todos los juegos al 100%`);
+          
+          console.log(`[LOGRO] Equipo ${equipoNumero} obtuvo "${nombreLogro}" por jugar ${tipoJuego}`);
         }
       }
-    }
+
+      // Asignar "Trabajo en equipo" siempre (si jugó al menos un juego)
+      if (tiposJuegosJugados.size > 0) {
+        for (const usuarioId of participantes) {
+          promesasLogros.push(
+            asignarLogro(usuarioId, 'Trabajo en equipo', 'grupo', partidaId)
+          );
+        }
+        console.log(`[LOGRO] Equipo ${equipoNumero} obtuvo "Trabajo en equipo"`);
+      }
+
+      // Ejecutar todas las promesas de logros del equipo
+      await Promise.all(promesasLogros);
+    });
+
+    // Ejecutar todos los equipos en paralelo
+    await Promise.all(promesasEquipos);
     
     return true;
   } catch (error) {
@@ -3124,115 +2987,87 @@ async function evaluarLogrosPersonales(partidaId) {
     console.log(`[LOGROS] Evaluando logros personales para partida ${partidaId}`);
     const pool = await poolPromise;
     
-    // 1. Obtener participantes de la partida
+    // Obtener participantes de la partida con su información de equipo
     const participantesResult = await pool.request()
       .input('partidaId', sql.Int, partidaId)
       .query(`
-        SELECT Usuario_ID_FK 
-        FROM Participantes_TB 
-        WHERE Partida_ID_FK = @partidaId
+        SELECT p.Usuario_ID_FK, p.Equipo_Numero,
+               r.Resultados
+        FROM Participantes_TB p
+        LEFT JOIN Resultados_TB r ON r.Partida_ID_FK = p.Partida_ID_FK AND r.Equipo = p.Equipo_Numero
+        WHERE p.Partida_ID_FK = @partidaId
       `);
+
+    // Mapeo de tipos de juego a logros personales
+    const logrosPersonalesPorJuego = {
+      'Dibujo': 'Diseñador',
+      'Memoria': 'Localizador de parejas',
+      'Rompecabezas': 'Localizador de detalles pequeños',
+      'Ahorcado': 'Adivinador'
+    };
+
+    // Procesar usuarios en lotes para optimizar
+    const BATCH_SIZE = 20;
+    const usuarios = participantesResult.recordset;
     
-    // 2. Para cada participante, asignar logro de participación
-    for (const participante of participantesResult.recordset) {
-      const usuarioId = participante.Usuario_ID_FK;
+    for (let i = 0; i < usuarios.length; i += BATCH_SIZE) {
+      const lote = usuarios.slice(i, i + BATCH_SIZE);
       
-      // Logro por participar en una partida
-      await asignarLogro(usuarioId, 'Jugador de partidas', 'usuario', partidaId);
-      
-      // Logro de primera vez (verificar si es su primera partida)
-      const primeraVezResult = await pool.request()
-        .input('usuarioId', sql.Int, usuarioId)
-        .input('partidaId', sql.Int, partidaId)
-        .query(`
-          SELECT COUNT(*) AS total
-          FROM Participantes_TB
-          WHERE Usuario_ID_FK = @usuarioId AND Partida_ID_FK != @partidaId
-        `);
+      const promesasLote = lote.map(async (participante) => {
+        const usuarioId = participante.Usuario_ID_FK;
+        const promesasUsuario = [];
 
-      if (primeraVezResult.recordset[0].total === 0) {
-        await asignarLogro(usuarioId, 'Gracias por jugar', 'usuario', partidaId);
-      }
-      
-      // Mapeo de tipos de juego a logros
-      const logrosPorJuego = {
-        'Dibujo': 'Diseñador',
-        'Memoria': 'Localizador de parejas',
-        'Rompecabezas': 'Localizador de detalles pequeños',
-        'Ahorcado': 'Adivinador'
-      };
-      
-      // Obtener el equipo del usuario
-      const equipoResult = await pool.request()
-        .input('partidaId', sql.Int, partidaId)
-        .input('usuarioId', sql.Int, usuarioId)
-        .query(`
-          SELECT Equipo_Numero
-          FROM Participantes_TB
-          WHERE Partida_ID_FK = @partidaId AND Usuario_ID_FK = @usuarioId
-        `);
+        // 1. Logro "Jugador de partidas" siempre
+        promesasUsuario.push(
+          asignarLogro(usuarioId, 'Jugador de partidas', 'usuario', partidaId)
+        );
 
-      if (equipoResult.recordset.length > 0) {
-        const equipoNumero = equipoResult.recordset[0].Equipo_Numero;
-        
-        // Obtener los juegos jugados por el equipo del usuario
-        const juegosJugadosResult = await pool.request()
+        // 2. Verificar si es primera vez
+        const primeraVezResult = await pool.request()
+          .input('usuarioId', sql.Int, usuarioId)
           .input('partidaId', sql.Int, partidaId)
-          .input('equipoNumero', sql.Int, equipoNumero)
           .query(`
-            SELECT r.Resultados
-            FROM Resultados_TB r
-            WHERE r.Partida_ID_FK = @partidaId AND r.Equipo = @equipoNumero
+            SELECT COUNT(*) AS total
+            FROM Participantes_TB
+            WHERE Usuario_ID_FK = @usuarioId AND Partida_ID_FK != @partidaId
           `);
-        
-        if (juegosJugadosResult.recordset.length > 0) {
-          const resultados = JSON.parse(juegosJugadosResult.recordset[0].Resultados);
-          
-          // Asignar logros por tipo de juego
-          const tiposJuegosJugados = new Set();
+
+        if (primeraVezResult.recordset[0].total === 0) {
+          promesasUsuario.push(
+            asignarLogro(usuarioId, 'Gracias por jugar', 'usuario', partidaId)
+          );
+        }
+
+        // 3. Logros por tipo de juego jugado
+        if (participante.Resultados) {
+          const resultados = JSON.parse(participante.Resultados);
+          const tiposJugados = new Set();
           
           for (const juego of resultados) {
-            // Solo considerar juegos en los que participó (no tienen "No Participado")
-            if (!juego.comentario || !juego.comentario.includes('No Participado')) {
-              tiposJuegosJugados.add(juego.tipoJuego);
-              
-              if (logrosPorJuego[juego.tipoJuego]) {
-                await asignarLogro(usuarioId, logrosPorJuego[juego.tipoJuego], 'usuario', partidaId);
-              }
+            if (!juego.comentario || !juego.comentario.includes('Juego No Participado')) {
+              tiposJugados.add(juego.tipoJuego);
+            }
+          }
+
+          // Asignar logros base por tipo de juego
+          for (const tipoJuego of tiposJugados) {
+            if (logrosPersonalesPorJuego[tipoJuego]) {
+              promesasUsuario.push(
+                asignarLogro(usuarioId, logrosPersonalesPorJuego[tipoJuego], 'usuario', partidaId)
+              );
             }
           }
         }
-      } else {
-        // 3. Verificar juegos en los que participó (método anterior como fallback)
-        const juegosResult = await pool.request()
-        .input('partidaId', sql.Int, partidaId)
-        .input('usuarioId', sql.Int, usuarioId)
-        .query(`
-          SELECT DISTINCT tj.Juego
-          FROM Partida_TB p
-          JOIN ConfiguracionJuego_TB cj ON p.Personalizacion_ID_FK = cj.Personalizacion_ID_PK
-          JOIN Tipo_Juego_TB tj ON cj.Tipo_Juego_ID_FK = tj.Tipo_Juego_ID_PK
-          JOIN Participantes_TB pt ON p.Partida_ID_PK = pt.Partida_ID_FK
-          WHERE p.Partida_ID_PK = @partidaId AND pt.Usuario_ID_FK = @usuarioId
-        `);
-        
-        // Asignar logros por tipo de juego
-        for (const juego of juegosResult.recordset) {
-          const tipoJuego = juego.Juego;
-          if (logrosPorJuego[tipoJuego]) {
-            await asignarLogro(usuarioId, logrosPorJuego[tipoJuego], 'usuario' , partidaId);
-          }
-        }
-      }
-      
-      // 4. Verificar logros de nivel por acumulación
-      await verificarLogrosNivel(usuarioId, partidaId);
-      
-      // 5. Omitir verificación de "Hola de nuevo" como solicitado
-      // await verificarLogroHolaDeNuevo(usuarioId, partidaId);
-      
-      // 6. Verificar logro "Cazador de logros"
-      await verificarLogroCazadorDeLogros(usuarioId, partidaId);
+
+        // 4. Verificar logros de nivel y cazador de logros
+        promesasUsuario.push(verificarLogrosNivelOptimizado(usuarioId, partidaId));
+        promesasUsuario.push(verificarLogroCazadorDeLogros(usuarioId, partidaId));
+
+        return Promise.all(promesasUsuario);
+      });
+
+      // Procesar lote actual
+      await Promise.all(promesasLote);
     }
     
     return true;
@@ -3242,34 +3077,102 @@ async function evaluarLogrosPersonales(partidaId) {
   }
 }
 
+async function verificarLogrosNivelOptimizado(usuarioId, partidaId) {
+  try {
+    const pool = await poolPromise;
+    
+    // Obtener todos los conteos de logros en una sola consulta
+    const conteosResult = await pool.request()
+      .input('usuarioId', sql.Int, usuarioId)
+      .query(`
+        SELECT l.Nombre, COUNT(*) AS total
+        FROM Usuario_Logros_TB ul
+        JOIN Logros_TB l ON ul.Logro_ID_FK = l.Logro_ID_PK
+        WHERE ul.Usuario_ID_FK = @usuarioId 
+        AND l.Nombre IN ('Diseñador', 'Localizador de parejas', 'Localizador de detalles pequeños', 'Adivinador', 'Jugador de partidas')
+        GROUP BY l.Nombre
+      `);
+
+    const conteos = {};
+    conteosResult.recordset.forEach(row => {
+      conteos[row.Nombre] = row.total;
+    });
+
+    // Estructura simplificada de niveles
+    const logrosNivel = [
+      { base: 'Diseñador', prefijo: 'Diseñador - Nivel' },
+      { base: 'Localizador de parejas', prefijo: 'Localizador de parejas - Nivel' },
+      { base: 'Localizador de detalles pequeños', prefijo: 'Localizador de detalles pequeños - Nivel' },
+      { base: 'Adivinador', prefijo: 'Adivinador - Nivel' },
+      { base: 'Jugador de partidas', prefijo: 'Jugador de partidas - Nivel' }
+    ];
+
+    const promesasNivel = [];
+
+    for (const tipoLogro of logrosNivel) {
+      const total = conteos[tipoLogro.base] || 0;
+      
+      // Niveles: 2 veces = Nivel 2, 3 veces = Nivel 3, 4 veces = Nivel 4
+      for (let nivel = 2; nivel <= 4; nivel++) {
+        if (total >= nivel) {
+          const nombreLogro = `${tipoLogro.prefijo} ${nivel}`;
+          promesasNivel.push(
+            asignarLogro(usuarioId, nombreLogro, 'usuario', partidaId)
+          );
+        }
+      }
+    }
+
+    await Promise.all(promesasNivel);
+    return true;
+  } catch (error) {
+    console.error('Error al verificar logros de nivel:', error);
+    return false;
+  }
+}
+
 // Función auxiliar para asignar un logro a un usuario
 async function asignarLogro(usuarioId, nombreLogro, tipoLogro, partidaId) {
   try {
     const pool = await poolPromise;
     
-    // 1. Obtener ID del logro
-    const logroResult = await pool.request()
-      .input('nombreLogro', sql.VarChar(100), nombreLogro)
-      .input('tipoLogro', sql.VarChar(50), tipoLogro)
-      .query(`
-        SELECT Logro_ID_PK, Repetible
-        FROM Logros_TB
-        WHERE Nombre = @nombreLogro AND Tipo = @tipoLogro
-      `);
-    
-    if (logroResult.recordset.length === 0) {
-      console.error(`[ERROR] Logro no encontrado: ${nombreLogro} (${tipoLogro})`);
-      return false;
+    // Cache de logros para evitar consultas repetidas
+    if (!global.logrosCache) {
+      global.logrosCache = {};
     }
     
-    const logroId = logroResult.recordset[0].Logro_ID_PK;
-    const esRepetible = logroResult.recordset[0].Repetible === 1;
+    const cacheKey = `${nombreLogro}-${tipoLogro}`;
     
-    // 2. Verificar si ya tiene el logro (si no es repetible)
-    if (!esRepetible) {
+    // Obtener ID del logro (con cache)
+    let logroInfo = global.logrosCache[cacheKey];
+    if (!logroInfo) {
+      const logroResult = await pool.request()
+        .input('nombreLogro', sql.VarChar(100), nombreLogro)
+        .input('tipoLogro', sql.VarChar(50), tipoLogro)
+        .query(`
+          SELECT Logro_ID_PK, Repetible
+          FROM Logros_TB
+          WHERE Nombre = @nombreLogro AND Tipo = @tipoLogro
+        `);
+      
+      if (logroResult.recordset.length === 0) {
+        console.error(`[ERROR] Logro no encontrado: ${nombreLogro} (${tipoLogro})`);
+        return false;
+      }
+      
+      logroInfo = {
+        id: logroResult.recordset[0].Logro_ID_PK,
+        repetible: logroResult.recordset[0].Repetible === 1
+      };
+      
+      global.logrosCache[cacheKey] = logroInfo;
+    }
+    
+    // Verificar si ya tiene el logro (solo si no es repetible)
+    if (!logroInfo.repetible) {
       const existeResult = await pool.request()
         .input('usuarioId', sql.Int, usuarioId)
-        .input('logroId', sql.Int, logroId)
+        .input('logroId', sql.Int, logroInfo.id)
         .query(`
           SELECT COUNT(*) AS total
           FROM Usuario_Logros_TB
@@ -3277,15 +3180,14 @@ async function asignarLogro(usuarioId, nombreLogro, tipoLogro, partidaId) {
         `);
       
       if (existeResult.recordset[0].total > 0) {
-        // Ya tiene el logro y no es repetible
-        return false;
+        return false; // Ya tiene el logro
       }
     }
     
-    // 3. Asignar el logro
+    // Asignar el logro
     await pool.request()
       .input('usuarioId', sql.Int, usuarioId)
-      .input('logroId', sql.Int, logroId)
+      .input('logroId', sql.Int, logroInfo.id)
       .input('fechaObtencion', sql.DateTime, new Date())
       .input('partidaId', sql.Int, partidaId)
       .query(`
@@ -3293,7 +3195,7 @@ async function asignarLogro(usuarioId, nombreLogro, tipoLogro, partidaId) {
         VALUES (@usuarioId, @logroId, @fechaObtencion, @partidaId)
       `);
     
-    console.log(`[LOGRO] Usuario ${usuarioId} obtuvo "${nombreLogro}" en partida ${partidaId}`);
+    console.log(`[LOGRO] Usuario ${usuarioId} obtuvo "${nombreLogro}"`);
     return true;
   } catch (error) {
     console.error(`Error al asignar logro ${nombreLogro} a usuario ${usuarioId}:`, error);
@@ -3422,38 +3324,19 @@ async function verificarLogroCazadorDeLogros(usuarioId, partidaId) {
   try {
     const pool = await poolPromise;
     
-    // Obtener fecha de inicio de la partida
-    const partidaResult = await pool.request()
-      .input('partidaId', sql.Int, partidaId)
-      .query(`
-        SELECT FechaInicio
-        FROM Partida_TB
-        WHERE Partida_ID_PK = @partidaId
-      `);
-    
-    if (partidaResult.recordset.length === 0) {
-      return false;
-    }
-    
-    const fechaInicio = partidaResult.recordset[0].FechaInicio;
-    
-    // Contar logros obtenidos durante esta partida
+    // Contar total de logros del usuario
     const logrosResult = await pool.request()
       .input('usuarioId', sql.Int, usuarioId)
-      .input('fechaInicio', sql.DateTime, fechaInicio)
-      .input('partidaId', sql.Int, partidaId)
       .query(`
         SELECT COUNT(*) AS total
         FROM Usuario_Logros_TB
-        WHERE Usuario_ID_FK = @usuarioId 
-        AND FechaObtenido >= @fechaInicio
-        AND Partida_ID_FK = @partidaId
+        WHERE Usuario_ID_FK = @usuarioId
       `);
     
     const totalLogros = logrosResult.recordset[0].total;
     
-    // Si obtuvo 4 o más logros en esta partida, asignar "Cazador de logros"
-    if (totalLogros >= 4) {
+    // Si tiene 20 o más logros, asignar "Cazador de logros"
+    if (totalLogros >= 20) {
       await asignarLogro(usuarioId, 'Cazador de logros', 'usuario', partidaId);
     }
     
@@ -3522,25 +3405,41 @@ async function generarResultadosJuegoActual(partidaId) {
             const intentosUsados = game.config.intentosMaximos - game.state.intentosRestantes;
             progreso = `${letrasAdivinadas}/${intentosUsados}`;
           }
-        } else if (juegoActual.tipo === "Dibujo") {
-          try {
-            const gameId = `drawing-${partidaId}-${equipoNumero}`;
-            const game = drawingGames[gameId];
-            
-            // Si ya hay una imagen guardada, usarla
-            if (game && game.imageData) {
-              comentario = game.imageData;
-            } else {
-              // Si no hay imagen guardada, generarla
-              comentario = await renderDrawingToBase64(partidaId, equipoNumero);
+        } if (juegoActual.tipo === "Dibujo") {
+            try {
+              const gameId = `drawing-${partidaId}-${equipoNumero}`;
+              const game = drawingGames[gameId];
+              
+              console.log(`[RESULTS] Procesando dibujo para equipo ${equipoNumero}`);
+              console.log(`[RESULTS] Game exists:`, !!game);
+              console.log(`[RESULTS] Has imageData:`, !!game?.imageData);
+              
+              // Si ya hay una imagen guardada, usarla
+              if (game && game.imageData) {
+                comentario = game.imageData;
+                console.log(`[RESULTS] ✅ Usando imagen existente para equipo ${equipoNumero}`);
+              } else {
+                console.log(`[RESULTS] No hay imagen guardada, generando nueva para equipo ${equipoNumero}`);
+                // Intentar generar la imagen
+                const generatedImage = await renderDrawingToBase64(partidaId, equipoNumero);
+                
+                // Guardar la imagen generada para futuras referencias
+                if (!drawingGames[gameId]) {
+                  drawingGames[gameId] = { actions: {}, tintaStates: {}, imageData: null };
+                }
+                drawingGames[gameId].imageData = generatedImage;
+                
+                comentario = generatedImage;
+                console.log(`[RESULTS] ✅ Imagen generada y guardada para equipo ${equipoNumero}`);
+              }
+              
+              progreso = "Dibujo completado";
+            } catch (error) {
+              console.error('[RESULTS] ❌ Error al procesar imagen de dibujo:', error);
+              comentario = getBlankCanvasData();
+              progreso = "Error al procesar dibujo";
             }
-            
-            progreso = "Dibujo completado"; 
-          } catch (error) {
-            console.error('Error al generar imagen:', error);
-            comentario = getBlankCanvasData(); // Usar canvas en blanco en caso de error
           }
-        }
       }
       
       resultados.push({
