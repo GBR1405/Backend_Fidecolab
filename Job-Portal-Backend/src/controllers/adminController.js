@@ -423,9 +423,22 @@ export const generatePartidaReport = async (req, res) => {
   try {
     const pool = await poolPromise;
 
+    // Consulta mejorada para obtener más información
     const result = await pool.request().query(`
-      SELECT Partida_ID_PK, FechaInicio, FechaFin, Profesor_ID_FK, EstadoPartida
-      FROM Partida_TB
+      SELECT 
+        p.Partida_ID_PK, 
+        p.FechaInicio, 
+        p.FechaFin, 
+        p.EstadoPartida,
+        u.Nombre + ' ' + u.Apellido1 AS Profesor,
+        gc.Codigo_Grupo,
+        cc.Nombre_Curso,
+        (SELECT COUNT(*) FROM Participantes_TB WHERE Partida_ID_FK = p.Partida_ID_PK) AS CantidadEstudiantes
+      FROM Partida_TB p
+      INNER JOIN Usuario_TB u ON p.Profesor_ID_FK = u.Usuario_ID_PK
+      INNER JOIN GrupoCurso_TB gc ON p.Grupo_ID_FK = gc.GrupoCurso_ID_PK
+      INNER JOIN CodigoCurso_TB cc ON gc.Curso_ID_FK = cc.CodigoCurso_ID_PK
+      ORDER BY p.FechaInicio DESC
     `);
 
     const reportsDir = path.join(process.cwd(), "reports");
@@ -458,10 +471,10 @@ export const generatePartidaReport = async (req, res) => {
 
       const primaryColor = '#003366';
       const secondaryColor = '#666666';
-      const tableRowHeight = 35;
-      const partidasPerPage = 15;
+      const accentColor = '#4CAF50';
+      const backgroundColor = '#F5F5F5';
+      const textColor = '#333333';
       let currentY = 80;
-      const totalPages = Math.ceil(result.recordset.length / partidasPerPage);
 
       const addHeader = () => {
         doc.image(imagePath, 50, 20, { width: 80 });
@@ -476,96 +489,96 @@ export const generatePartidaReport = async (req, res) => {
       const addTitle = () => {
         currentY += 5;
         doc.fontSize(16).font('Helvetica-Bold').fillColor(primaryColor)
-          .text('REPORTE DE PARTIDAS', 0, currentY, { align: 'center' });
+          .text('REPORTE DETALLADO DE PARTIDAS', 0, currentY, { align: 'center' });
         currentY += 30;
-        doc.fontSize(12).font('Helvetica').fillColor('black')
+        doc.fontSize(12).font('Helvetica').fillColor(textColor)
           .text(`Total de partidas: ${result.recordset.length}`, { align: 'center' });
         doc.text(`Fecha de generación: ${new Date().toLocaleString()}`, { align: 'center' });
         currentY += 40;
       };
 
-      const drawTableHeader = () => {
-        const tableLeft = 50;
-        const columnWidths = [50, 100, 100, 100, 100];
-        const tableWidth = columnWidths.reduce((a, b) => a + b, 0);
-
-        doc.rect(tableLeft, currentY, tableWidth, tableRowHeight).fill(primaryColor);
-
-        let x = tableLeft;
-        doc.fontSize(12).font('Helvetica-Bold').fillColor('white');
-        doc.text('ID', x + columnWidths[0]/2, currentY + 7, { width: columnWidths[0], align: 'center' });
-        x += columnWidths[0];
-        doc.text('Fecha Inicio', x + 5, currentY + 7, { width: columnWidths[1] - 10, align: 'center' });
-        x += columnWidths[1];
-        doc.text('Fecha Fin', x + 5, currentY + 7, { width: columnWidths[2] - 10, align: 'center' });
-        x += columnWidths[2];
-        doc.text('Profesor ID', x + 5, currentY + 7, { width: columnWidths[3] - 10, align: 'center' });
-        x += columnWidths[3];
-        doc.text('Estado', x + 5, currentY + 7, { width: columnWidths[4] - 10, align: 'center' });
-
-        currentY += tableRowHeight;
-        return columnWidths;
+      const drawPartidaCard = (partida) => {
+        const cardX = 50;
+        const cardWidth = 500;
+        const cardHeight = 150;
+        
+        // Fondo de la tarjeta
+        doc.roundedRect(cardX, currentY, cardWidth, cardHeight, 5)
+          .fill(backgroundColor)
+          .stroke(primaryColor);
+        
+        // Encabezado de la tarjeta
+        doc.fontSize(14).font('Helvetica-Bold').fillColor(primaryColor)
+          .text(`Partida #${partida.Partida_ID_PK}`, cardX + 15, currentY + 15);
+        
+        // Estado con color según el estado
+        let estadoColor;
+        switch(partida.EstadoPartida) {
+          case 'finalizada': estadoColor = '#4CAF50'; break;
+          case 'iniciada': estadoColor = '#2196F3'; break;
+          case 'en espera': estadoColor = '#FFC107'; break;
+          case 'en proceso': estadoColor = '#9C27B0'; break;
+          default: estadoColor = textColor;
+        }
+        
+        doc.fontSize(12).font('Helvetica-Bold').fillColor(estadoColor)
+          .text(partida.EstadoPartida.toUpperCase(), cardX + cardWidth - 80, currentY + 15);
+        
+        // Separador
+        doc.moveTo(cardX + 10, currentY + 40)
+          .lineTo(cardX + cardWidth - 10, currentY + 40)
+          .lineWidth(0.5)
+          .stroke(secondaryColor);
+        
+        // Contenido de la tarjeta
+        const contentY = currentY + 50;
+        let contentX = cardX + 15;
+        
+        // Primera columna
+        doc.fontSize(10).font('Helvetica-Bold').fillColor(textColor)
+          .text('Profesor:', contentX, contentY);
+        doc.font('Helvetica').text(partida.Profesor, contentX + 60, contentY);
+        
+        doc.font('Helvetica-Bold').text('Curso:', contentX, contentY + 20);
+        doc.font('Helvetica').text(partida.Nombre_Curso, contentX + 60, contentY + 20);
+        
+        // Segunda columna
+        contentX = cardX + 250;
+        doc.font('Helvetica-Bold').text('Grupo:', contentX, contentY);
+        doc.font('Helvetica').text(partida.Codigo_Grupo, contentX + 60, contentY);
+        
+        doc.font('Helvetica-Bold').text('Estudiantes:', contentX, contentY + 20);
+        doc.font('Helvetica').text(partida.CantidadEstudiantes, contentX + 60, contentY + 20);
+        
+        // Tercera columna (fechas)
+        contentX = cardX + 15;
+        doc.font('Helvetica-Bold').text('Fecha Inicio:', contentX, contentY + 50);
+        const fechaInicio = partida.FechaInicio ? new Date(partida.FechaInicio).toLocaleString() : 'N/A';
+        doc.font('Helvetica').text(fechaInicio, contentX + 80, contentY + 50);
+        
+        doc.font('Helvetica-Bold').text('Fecha Fin:', contentX + 250, contentY + 50);
+        const fechaFin = partida.FechaFin ? new Date(partida.FechaFin).toLocaleString() : 'N/A';
+        doc.font('Helvetica').text(fechaFin, contentX + 330, contentY + 50);
+        
+        currentY += cardHeight + 20;
       };
 
-      for (let i = 0; i < totalPages; i++) {
-        if (i > 0) {
-          doc.addPage();
-        }
-
-        addHeader();
-        if (i === 0) addTitle();
-        const columnWidths = drawTableHeader();
-
-        doc.fontSize(10).font('Helvetica').fillColor('black');
-
-        const partidas = result.recordset.slice(i * partidasPerPage, (i + 1) * partidasPerPage);
-
-        partidas.forEach((partida, index) => {
-          const tableLeft = 50;
-          const tableWidth = columnWidths.reduce((a, b) => a + b, 0);
-
-          if (index % 2 === 0) {
-            doc.rect(tableLeft, currentY, tableWidth, tableRowHeight).fill('#f5f5f5');
-          }
-
-          let x = tableLeft;
-          doc.text(partida.Partida_ID_PK.toString(), x + columnWidths[0]/2, currentY + 5, { 
-            width: columnWidths[0], align: 'center' 
-          });
-          x += columnWidths[0];
-          
-          const fechaInicio = partida.FechaInicio ? new Date(partida.FechaInicio).toLocaleDateString() : 'N/A';
-          doc.text(fechaInicio, x + 5, currentY + 5, { 
-            width: columnWidths[1] - 10, align: 'center' 
-          });
-          x += columnWidths[1];
-          
-          const fechaFin = partida.FechaFin ? new Date(partida.FechaFin).toLocaleDateString() : 'N/A';
-          doc.text(fechaFin, x + 5, currentY + 5, { 
-            width: columnWidths[2] - 10, align: 'center' 
-          });
-          x += columnWidths[2];
-          
-          doc.text(partida.Profesor_ID_FK || 'N/A', x + 5, currentY + 5, { 
-            width: columnWidths[3] - 10, align: 'center' 
-          });
-          x += columnWidths[3];
-          
-          doc.text(partida.EstadoPartida || 'N/A', x + 5, currentY + 5, { 
-            width: columnWidths[4] - 10, align: 'center' 
-          });
-
-          doc.moveTo(tableLeft, currentY + tableRowHeight)
-            .lineTo(tableLeft + tableWidth, currentY + tableRowHeight)
-            .lineWidth(0.5)
-            .stroke('#dddddd');
-
-          currentY += tableRowHeight;
-        });
-      }
+      addHeader();
+      addTitle();
 
       if (result.recordset.length === 0) {
         doc.fontSize(14).text("No hay partidas registradas.", { align: 'center' });
+      } else {
+        result.recordset.forEach((partida, index) => {
+          // Verificar si necesitamos nueva página
+          if (currentY > 700) { // Aproximadamente el final de la página A4
+            doc.addPage();
+            currentY = 50;
+            addHeader();
+          }
+          
+          drawPartidaCard(partida);
+        });
       }
 
       doc.end();
