@@ -864,40 +864,33 @@ export const obtenerUltimoGrupoCurso = async (req, res) => {
   try {
     const { courseId } = req.params;
     const pool = await poolPromise;
-    
-    // Obtenemos todos los números de grupo ordenados
+
     const result = await pool.request()
       .input("courseId", courseId)
       .query(`
-        SELECT Codigo_Grupo AS numero
-        FROM GrupoCurso_TB
-        WHERE Curso_ID_FK = @courseId
-        ORDER BY Codigo_Grupo
+        SELECT Codigo_Grupo 
+        FROM GrupoCurso_TB 
+        WHERE Curso_ID_FK = @courseId 
+        ORDER BY Codigo_Grupo ASC
       `);
 
-    const grupos = result.recordset.map(item => item.numero);
-    
-    // Si no hay grupos, empezamos con G1
-    if (grupos.length === 0) {
-      return res.json({ numero: 1 });
-    }
+    const grupos = result.recordset.map(row => row.Codigo_Grupo);
 
-    // Buscamos el primer hueco en la secuencia
     let siguienteNumero = 1;
-    for (const numero of grupos) {
-      if (numero > siguienteNumero) {
-        // Encontramos un hueco, devolvemos este número
-        break;
+    for (let i = 0; i < grupos.length; i++) {
+      if (grupos[i] !== siguienteNumero) {
+        break; // Encontramos un hueco
       }
-      siguienteNumero = numero + 1;
+      siguienteNumero++;
     }
 
-    res.json({ numero: siguienteNumero });
+    res.json({ numero: siguienteNumero }); // Ej: { numero: 3 }
   } catch (error) {
-    console.error("Error obteniendo el siguiente grupo:", error);
-    res.status(500).json({ error: "Error obteniendo el siguiente grupo." });
+    console.error("Error obteniendo el siguiente grupo disponible:", error);
+    res.status(500).json({ error: "Error obteniendo el siguiente grupo disponible." });
   }
 };
+
 
 export const obtenerBitacoraDescargas = async (req, res) => {
   try {
