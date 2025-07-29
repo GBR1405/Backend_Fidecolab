@@ -860,7 +860,7 @@ export const obtenerCursos = async (req, res) => {
 };
 
 // Obtener el último grupo de un curso específico
-export const obtenerSiguienteGrupoCurso = async (req, res) => {
+export const obtenerUltimoGrupoCurso = async (req, res) => {
   try {
     const { courseId } = req.params;
     const pool = await poolPromise;
