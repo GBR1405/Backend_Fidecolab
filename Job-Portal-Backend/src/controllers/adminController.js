@@ -876,21 +876,24 @@ export const obtenerUltimoGrupoCurso = async (req, res) => {
 
     const grupos = result.recordset.map(row => row.Codigo_Grupo);
 
-    let siguienteNumero = 1;
+    let numeroFaltante = 1;
+
     for (let i = 0; i < grupos.length; i++) {
-      if (grupos[i] !== siguienteNumero) {
-        break; // Encontramos un hueco
+      if (grupos[i] !== numeroFaltante) {
+        // Falta este número
+        return res.json({ numero: numeroFaltante });
       }
-      siguienteNumero++;
+      numeroFaltante++;
     }
 
-    res.json({ numero: siguienteNumero }); // Ej: { numero: 3 }
+    // Si no faltó ninguno, se devuelve el siguiente
+    res.json({ numero: numeroFaltante });
+
   } catch (error) {
     console.error("Error obteniendo el siguiente grupo disponible:", error);
     res.status(500).json({ error: "Error obteniendo el siguiente grupo disponible." });
   }
 };
-
 
 export const obtenerBitacoraDescargas = async (req, res) => {
   try {
