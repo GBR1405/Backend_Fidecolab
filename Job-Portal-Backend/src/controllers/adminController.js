@@ -887,7 +887,7 @@ export const obtenerUltimoGrupoCurso = async (req, res) => {
     }
 
     // Si no faltó ninguno, se devuelve el siguiente
-    res.json({ numero: numeroFaltante });
+    res.json({ numero: numeroFaltante-1 });
 
   } catch (error) {
     console.error("Error obteniendo el siguiente grupo disponible:", error);
