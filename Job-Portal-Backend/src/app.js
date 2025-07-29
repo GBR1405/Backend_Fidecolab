@@ -3395,7 +3395,11 @@ async function generarResultadosJuegoActual(partidaId) {
           const game = puzzleGames[gameId];
           if (game) {
             const progress = calculatePuzzleProgress(game.pieces);
-            progreso = `${progress}%`;
+            progreso = progress; // <- GUÁRDALO COMO NÚMERO
+            if (!juegoActual.progresoPorEquipo) juegoActual.progresoPorEquipo = {};
+            juegoActual.progresoPorEquipo[equipoNumero] = progress; // <- asegúrate que esté listo para guardar
+          } else {
+            progreso = 0;
           }
         } else if (juegoActual.tipo === "Ahorcado") {
           const gameId = `hangman-${partidaId}-${equipoNumero}-${currentIndex}`;
