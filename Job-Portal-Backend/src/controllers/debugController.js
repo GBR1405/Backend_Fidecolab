@@ -1942,7 +1942,8 @@ export const obtenerHistorialPartidas = async (req, res) => {
 export const getResultsAdmin = async (req, res) => {
   const { partidaId } = req.params;
 
-  console.log("🔍 Administrador solicitando resultados para partida:", partidaId);
+  console.log("🔐 Acceso de administrador:");
+  console.log("- Partida solicitada:", partidaId);
 
   try {
     const pool = await poolPromise;
@@ -1999,7 +2000,7 @@ export const getResultsAdmin = async (req, res) => {
       return { equipo, resultados: resultadosQuery.recordset };
     }));
 
-    // 5. Obtener logros por equipo
+    // 5. Obtener logros por equipo (usando el primer miembro como referencia)
     const logrosPorEquipo = {};
     for (const equipo of equipos) {
       const userQuery = await pool.request()
@@ -2031,7 +2032,7 @@ export const getResultsAdmin = async (req, res) => {
       }
     }
 
-    console.log("✅ Resultados completos obtenidos para administrador");
+    console.log("✅ Resultados para administrador obtenidos correctamente");
     return res.status(200).json({
       partida,
       equipos: miembrosPorEquipo,
@@ -2040,11 +2041,8 @@ export const getResultsAdmin = async (req, res) => {
     });
 
   } catch (error) {
-    console.error("Error al obtener resultados (admin):", error);
-    return res.status(500).json({ 
-      success: false, 
-      message: "Error al obtener resultados",
-      error: error.message 
-    });
+    console.error('❌ Error al obtener resultados (admin):', error);
+    return res.status(500).json({ message: 'Error al obtener resultados' });
   }
 };
+
