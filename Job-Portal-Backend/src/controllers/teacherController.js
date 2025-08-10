@@ -8,8 +8,21 @@ import multer from "multer";
 import xlsx from "xlsx";
 import pdfkit from "pdfkit";
 import bcrypt from 'bcryptjs';
-
 import { io } from '../app.js';
+import nodemailer from "nodemailer";
+
+const transporter = nodemailer.createTransport({
+  host: process.env.EMAIL_HOST,
+  port: 587,
+  secure: false,
+  auth: {
+    user: process.env.EMAIL_USER,
+    pass: process.env.EMAIL_PASS,
+  },
+  tls: {
+    rejectUnauthorized: false,
+  },
+});
 
 
 export const obtenerCursosPersonalizados = async (req, res) => {
