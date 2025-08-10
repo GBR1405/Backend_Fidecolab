@@ -95,6 +95,7 @@ export const agregarEstudiante = async (req, res) => {
     }
     const rolId = rolResult.recordset[0].Rol_ID_PK;
 
+    // Procesar estudiantes manuales o por lista
     if (manual === "true") {
       const { name, lastName1, lastName2, email, gender, grupoId } = req.body;
       if (!name || !lastName1 || !lastName2 || !email || !gender || !grupoId) {
@@ -123,6 +124,7 @@ export const agregarEstudiante = async (req, res) => {
       });
     }
 
+    // Registrar o vincular estudiantes
     for (const est of estudiantesData) {
       const existingUser = await pool.request()
         .input("email", sql.NVarChar, est.email)
@@ -179,35 +181,121 @@ export const agregarEstudiante = async (req, res) => {
             .input("usuarioId", sql.Int, usuarioId)
             .input("grupoCursoId", sql.Int, grupoCursoId)
             .query(`INSERT INTO GrupoVinculado_TB (Usuario_ID_FK, GrupoCurso_ID_FK) VALUES (@usuarioId, @grupoCursoId)`);
+
+          // Guardar en lista para enviar correo
           nuevosEstudiantes.push(est);
         }
       }
     }
 
-    let pdfBase64 = null;
-    let mensaje = '';
-
-    if (nuevosEstudiantes.length > 0) {
-      const pdfPath = await generatePDF(nuevosEstudiantes, saltados);
-      const pdfBuffer = fs.readFileSync(pdfPath);
-      pdfBase64 = pdfBuffer.toString('base64');
-      mensaje = saltados === 0
-        ? 'Todos los estudiantes fueron agregados correctamente.'
-        : `Se omitieron ${saltados} estudiantes por estar ya registrados o vinculados.`;
-      fs.unlink(pdfPath, (err) => {
-        if (err) console.error("Error al eliminar el archivo PDF:", err);
-      });
-    } else {
-      mensaje = 'Se omitieron todos los estudiantes y no se agregaron nuevos.';
+    // Enviar correos a los nuevos estudiantes
+    for (const est of nuevosEstudiantes) {
+      try {
+        await transporter.sendMail({
+          from: `"Bienvenida a FideColab" <${process.env.EMAIL_USER}>`,
+          to: est.email,
+          subject: "Bienvenido a FideColab",
+          html: `
+            <html>
+              <head>
+                <style>
+                  body {
+                    font-family: 'Arial', sans-serif;
+                    background-color: #f4f6f9;
+                    margin: 0;
+                    padding: 0;
+                    color: #333;
+                  }
+                  .container {
+                    width: 100%;
+                    max-width: 600px;
+                    margin: 0 auto;
+                    padding: 20px;
+                    background-color: #ffffff;
+                    border-radius: 8px;
+                    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+                  }
+                  .header {
+                    text-align: center;
+                    padding: 20px;
+                    background-color: rgb(19, 30, 173);
+                    border-radius: 8px 8px 0 0;
+                    color: #ffffff;
+                  }
+                  .header img {
+                    width: 100px;
+                    margin-bottom: 10px;
+                  }
+                  .content {
+                    padding: 20px;
+                    font-size: 16px;
+                  }
+                  .password-box {
+                    background-color: #f8f9fa;
+                    border: 1px solid #dee2e6;
+                    border-radius: 4px;
+                    padding: 15px;
+                    margin: 20px 0;
+                    text-align: center;
+                    font-size: 18px;
+                    font-weight: bold;
+                    color: #dc3545;
+                  }
+                  .footer {
+                    margin-top: 30px;
+                    text-align: center;
+                    font-size: 14px;
+                    color: #888;
+                  }
+                  .footer p {
+                    margin: 10px 0;
+                  }
+                </style>
+              </head>
+              <body>
+                <div class="container">
+                  <div class="header">
+                    <img src="https://cdn.ufidelitas.ac.cr/wp-content/uploads/2023/11/17075151/FideLogo-04.png" alt="Logo" />
+                    <h1>Bienvenido a FideColab</h1>
+                  </div>
+                  <div class="content">
+                    <p>Hola ${est.name},</p>
+                    <p>¡Bienvenido a FideColab! Se ha creado una cuenta para ti.</p>
+                    <p>Tus credenciales de acceso son:</p>
+                    <p><strong>Correo:</strong> ${est.email}</p>
+                    <div class="password-box">
+                      Contraseña: ${est.generatedPassword}
+                    </div>
+                    <p>Te recomendamos cambiar esta contraseña después de iniciar sesión por primera vez.</p>
+                    <p>¡Disfruta de la plataforma!</p>
+                  </div>
+                  <div class="footer">
+                    <p>Si tienes problemas para acceder, por favor contacta con nuestro soporte.</p>
+                  </div>
+                </div>
+              </body>
+            </html>
+          `,
+        });
+      } catch (emailError) {
+        console.error(`Error al enviar el correo a ${est.email}:`, emailError);
+      }
     }
 
-    res.json({ success: true, pdfBase64, mensaje });
+    const mensaje = nuevosEstudiantes.length > 0
+      ? saltados === 0
+        ? 'Todos los estudiantes fueron agregados y notificados correctamente.'
+        : `Se omitieron ${saltados} estudiantes por estar ya registrados o vinculados.`
+      : 'Se omitieron todos los estudiantes y no se agregaron nuevos.';
+
+    res.json({ success: true, mensaje });
 
   } catch (error) {
     console.error("Error al agregar estudiantes:", error);
     res.status(500).json({ mensaje: "Error interno del servidor" });
   }
 };
+
 
 
 export const obtenerEstudiantesPorProfesor = async (req, res) => {

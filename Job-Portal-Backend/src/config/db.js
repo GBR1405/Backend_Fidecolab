@@ -2,6 +2,8 @@ import sql from 'mssql';
 import dotenv from 'dotenv';
 dotenv.config();
 
+// Configuración de la conexión a la base de datos
+
 const config = {
   user: process.env.DB_USER,
   password: process.env.DB_PASS,
@@ -13,8 +15,6 @@ const config = {
   },
 };
 
-
-// Crear el pool de conexiones
 const poolPromise = new sql.ConnectionPool(config)
   .connect()
   .then(pool => {

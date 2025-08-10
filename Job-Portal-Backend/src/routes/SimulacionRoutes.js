@@ -1,5 +1,5 @@
 import express from 'express';
-import {checkParticipation, checkGroup, checkActivity, getResults, getFullUserGames, obtenerResultadosProfesor,obtenerResultadoEstudiante } from '../controllers/simulatorController.js';
+import {checkParticipation, checkGroup, checkActivity, getResults, getFullUserGames, obtenerResultadosProfesor,obtenerResultadoEstudiante, PeticionInternet } from '../controllers/simulatorController.js';
 import authMiddleware from '../middleware/authMiddleware.js';
 import { roleMiddleware } from "../middleware/roleMiddleware.js";
 

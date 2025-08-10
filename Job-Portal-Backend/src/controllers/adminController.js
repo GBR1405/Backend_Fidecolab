@@ -17,6 +17,8 @@ dotenv.config();
 const storage = multer.memoryStorage();
 const upload = multer({ storage });
 
+// Para el envio de correros Electronicos
+
 const transporter = nodemailer.createTransport({
   host: process.env.EMAIL_HOST,
   port: 587,

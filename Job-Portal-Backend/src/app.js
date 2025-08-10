@@ -163,6 +163,32 @@ const VOTING_TIME = 5000;
 
 //Funciones extras
 
+// Sistema Post de Petición de Internet
+app.post('/current-game-status', async (req, res) => {
+  try {
+    const { partidaId } = req.body;
+    if (!partidaId) {
+      return res.status(400).json({ error: 'Falta partidaId' });
+    }
+
+    // Aquí accedes a tu estructura donde guardas el estado de cada partida
+    const partida = partidasActivas[partidaId]; // Ajusta al nombre real de tu variable
+    if (!partida) {
+      return res.status(404).json({ error: 'Partida no encontrada' });
+    }
+
+    res.json({
+      currentIndex: partida.currentIndex,
+      gameId: partida.currentGameId,
+      timestamp: Date.now()
+    });
+  } catch (err) {
+    console.error('Error en /current-game-status', err);
+    res.status(500).json({ error: 'Error interno' });
+  }
+});
+
+
 // Agregar esta función antes del evento nextGame
 async function guardarDibujosActuales(partidaId) {
   try {
@@ -3393,13 +3419,17 @@ async function generarResultadosJuegoActual(partidaId) {
         } else if (juegoActual.tipo === "Rompecabezas") {
           const gameId = `puzzle-${partidaId}-${equipoNumero}-${currentIndex}`;
           const game = puzzleGames[gameId];
-          if (game) {
-            const progress = calculatePuzzleProgress(game.pieces);
-            progreso = progress; // <- GUÁRDALO COMO NÚMERO
-            if (!juegoActual.progresoPorEquipo) juegoActual.progresoPorEquipo = {};
-            juegoActual.progresoPorEquipo[equipoNumero] = progress; // <- asegúrate que esté listo para guardar
+           if (game && game.state && game.state.pieces) {
+            const currentProgress = calculatePuzzleProgress(game.state.pieces);
+            progreso = `${currentProgress}%`;
+            
+            game.state.progress = currentProgress;
+            
+            if (currentProgress === 100 && timestamp && !timestamp.completedAt) {
+              timestamp.completedAt = new Date();
+            }
           } else {
-            progreso = 0;
+            progreso = "0%";
           }
         } else if (juegoActual.tipo === "Ahorcado") {
           const gameId = `hangman-${partidaId}-${equipoNumero}-${currentIndex}`;
