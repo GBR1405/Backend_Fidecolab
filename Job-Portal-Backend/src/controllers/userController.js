@@ -1,5 +1,6 @@
 import { poolPromise } from "../config/db.js";  // Importamos el poolPromise
 import UserModel from "../models/userModel.js";
+import { GenerarBitacora } from "../controllers/generalController.js";
 
 // Obtener todos los usuarios
 export const getAllUsers = async (req, res) => {

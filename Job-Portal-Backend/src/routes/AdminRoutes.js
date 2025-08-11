@@ -15,7 +15,7 @@ router.get('/metricas',authMiddleware, roleMiddleware(["Administrador"]), obtene
 
 router.get('/report-students',authMiddleware, roleMiddleware(["Administrador"]), generateStudentsReport);
 router.post('/add-course',authMiddleware, roleMiddleware(["Administrador"]), agregarCurso);
-router.get('/cursos', obtenerCursos);
+router.get('/cursos',authMiddleware, obtenerCursos);
 router.get('/cursos/:courseId/ultimo-grupo',authMiddleware, roleMiddleware(["Administrador"]), obtenerUltimoGrupoCurso);
 router.post('/add-grupos',authMiddleware, roleMiddleware(["Administrador"]), guardarGrupo);
 router.post('/add-profesor',authMiddleware, roleMiddleware(["Administrador"]), agregarProfesor);

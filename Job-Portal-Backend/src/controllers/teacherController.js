@@ -10,6 +10,7 @@ import pdfkit from "pdfkit";
 import bcrypt from 'bcryptjs';
 import { io } from '../app.js';
 import nodemailer from "nodemailer";
+import { GenerarBitacora } from "../controllers/generalController.js";
 
 const transporter = nodemailer.createTransport({
   host: process.env.EMAIL_HOST,

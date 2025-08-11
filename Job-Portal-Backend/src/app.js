@@ -594,9 +594,33 @@ io.on('connection', (socket) => {
   }
 });
 
+//------------------------------ Prueba
 
+socket.on('joinVoiceRoom', ({ partidaId, equipoNumero }) => {
+  const voiceRoomId = `voice-${partidaId}-${equipoNumero}`;
+  socket.join(voiceRoomId);
+  socket.voiceRoomId = voiceRoomId;
+  console.log(`Usuario ${socket.id} unido a ${voiceRoomId}`);
+  
+  // Notificar a otros que alguien se unió
+  socket.to(voiceRoomId).emit('voiceUserJoined', socket.id);
+});
 
-  // Al final del io.on('connection', ...)
+socket.on('voiceSignal', ({ targetId, data }) => {
+  io.to(targetId).emit('voiceSignal', { from: socket.id, data });
+});
+
+socket.on('leaveVoiceRoom', () => {
+  if (socket.voiceRoomId) {
+    socket.leave(socket.voiceRoomId);
+    socket.to(socket.voiceRoomId).emit('voiceUserLeft', socket.id);
+    console.log(`Usuario ${socket.id} salió de ${socket.voiceRoomId}`);
+    delete socket.voiceRoomId;
+  }
+});
+
+//------------------------------ Prueba
+
 socket.on('finishGame', async (partidaId, callback) => {
   try {
     console.log(`[INFO] Finalizando partida ${partidaId}`);
@@ -729,7 +753,7 @@ socket.on('finishGame', async (partidaId, callback) => {
       });
     });
 
-    // 6. Notificar a todos y devolver confirmación
+    io.in(`voice-${partidaId}`).emit('voiceRoomClosed');
     io.to(`partida_${partidaId}`).emit('gameFinished', { partidaId });
     
     callback({ success: true });

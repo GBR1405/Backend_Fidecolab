@@ -6,6 +6,7 @@ import nodemailer from "nodemailer";
 import dotenv from "dotenv";
 import sql from "mssql";
 import { generatePath } from "react-router-dom";
+import { GenerarBitacora } from "../controllers/generalController.js";
 
 
 // Función para registrar un nuevo usuario

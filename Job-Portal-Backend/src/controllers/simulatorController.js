@@ -1,6 +1,7 @@
 import { poolPromise } from '../config/db.js';
 import sql from 'mssql';
 import { io } from '../app.js';
+import { GenerarBitacora } from "../controllers/generalController.js";
 
 
 export const cancelSimulation = async (req, res) => {

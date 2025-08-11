@@ -1,12 +1,6 @@
 import sql from "mssql";
 import { poolPromise } from "../config/db.js";
 
-/**
- * Registra una acción en la bitácora.
- * @param {number} Usuario_ID_FK - ID del usuario que realiza la acción.
- * @param {string} Accion - Descripción de la acción realizada.
- * @param {string|null} Error - Mensaje de error (o `null` si no hay error).
- */
 export const GenerarBitacora = async (Usuario_ID_FK, Accion, Error = null) => {
   try {
     const pool = await poolPromise;
@@ -22,10 +16,10 @@ export const GenerarBitacora = async (Usuario_ID_FK, Accion, Error = null) => {
         VALUES (@Usuario_ID_FK, @Accion, @Error, @Fecha)
       `);
 
-    console.log(`📌 Bitácora registrada: Usuario ${Usuario_ID_FK} - Acción: "${Accion}"`);
+    console.log(`Bitácora registrada: Usuario ${Usuario_ID_FK} - Acción: "${Accion}"`);
 
   } catch (error) {
-    console.error("❌ Error al registrar en la bitácora:", error);
+    console.error("Error al registrar en la bitácora:", error);
   }
 };
 

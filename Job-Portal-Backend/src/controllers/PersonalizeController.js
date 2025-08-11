@@ -3,6 +3,7 @@ import jwt from "jsonwebtoken";
 import dotenv from "dotenv";
 import fetch from "node-fetch";
 import multer from "multer";
+import { GenerarBitacora } from "../controllers/generalController.js";
 
 // Obtener juegos disponibles
 export const getTipoJuegos = async (req, res) => {

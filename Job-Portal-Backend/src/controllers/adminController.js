@@ -213,6 +213,7 @@ export const generateStudentsReport = async (req, res) => {
 
   } catch (error) {
     console.error("Error generando el informe:", error);
+    await GenerarBitacora(req.user.id, "Error reporte de Estudiantes", error);
     res.status(500).json({ success: false, message: "Error generando PDF" });
   }
 };
@@ -417,6 +418,7 @@ export const generateProfesorReport = async (req, res) => {
 
   } catch (error) {
     console.error("Error generando el informe:", error);
+    await GenerarBitacora(req.user.id, "Error reporte de Profesor", error);
     res.status(500).json({ success: false, message: "Error generando PDF" });
   }
 };
@@ -605,6 +607,7 @@ export const generatePartidaReport = async (req, res) => {
 
   } catch (error) {
     console.error("Error generando el informe:", error);
+    await GenerarBitacora(req.user.id, "Error reporte de Partida", error);
     res.status(500).json({ success: false, message: "Error generando PDF" });
   }
 };
@@ -777,6 +780,7 @@ export const generateBitacoraReport = async (req, res) => {
 
   } catch (error) {
     console.error("Error generando el informe:", error);
+    await GenerarBitacora(req.user.id, "Error reporte de Bitacoras", error);
     res.status(500).json({ success: false, message: "Error generando PDF" });
   }
 };
@@ -800,7 +804,6 @@ export const agregarCurso = async (req, res) => {
   try {
       const pool = await poolPromise;
 
-      // 1️⃣ Verificar si ya existe un curso con el mismo nombre o código
       const checkQuery = `
           SELECT CodigoCurso_ID_PK 
           FROM CodigoCurso_TB 
@@ -842,6 +845,7 @@ export const agregarCurso = async (req, res) => {
 
   } catch (error) {
       console.error("Error al agregar curso:", error);
+      await GenerarBitacora(req.user.id, "Error al agregar un curso", error);
       return res.status(500).json({ error: "Error interno del servidor." });
   }
 };
@@ -857,11 +861,12 @@ export const obtenerCursos = async (req, res) => {
       res.json(result.recordset);
   } catch (error) {
       console.error("Error obteniendo cursos:", error);
+      await GenerarBitacora(req.user.id, "Error al obtener los cursos", error);
       res.status(500).json({ error: "Error obteniendo los cursos." });
   }
 };
 
-// Obtener el último grupo de un curso específico
+
 export const obtenerUltimoGrupoCurso = async (req, res) => {
   try {
     const { courseId } = req.params;
@@ -882,17 +887,18 @@ export const obtenerUltimoGrupoCurso = async (req, res) => {
 
     for (let i = 0; i < grupos.length; i++) {
       if (grupos[i] !== numeroFaltante) {
-        // Falta este número
+
         return res.json({ numero: numeroFaltante });
       }
       numeroFaltante++;
     }
 
-    // Si no faltó ninguno, se devuelve el siguiente
+    
     res.json({ numero: numeroFaltante-1 });
 
   } catch (error) {
     console.error("Error obteniendo el siguiente grupo disponible:", error);
+    await GenerarBitacora(req.user.id, "Error al obtener el numero de grupo", error);
     res.status(500).json({ error: "Error obteniendo el siguiente grupo disponible." });
   }
 };
@@ -920,13 +926,14 @@ export const obtenerBitacoraDescargas = async (req, res) => {
       res.json(result.recordset);
   } catch (error) {
       console.error("Error obteniendo la bitácora de descargas:", error);
+      await GenerarBitacora(req.user.id, "Error a obtener las descagar de bitacora", error);
       res.status(500).json({ error: "Error obteniendo la bitácora de descargas." });
   }
 };
 
 export const guardarGrupo = async (req, res) => {
   try {
-      const { cursoId, grupoNumero } = req.body; // Asegúrate de recibir ambos datos
+      const { cursoId, grupoNumero } = req.body; 
 
       if (!cursoId || !grupoNumero) {
           return res.status(400).json({ mensaje: "El ID del curso y el número del grupo son obligatorios." });
@@ -934,7 +941,6 @@ export const guardarGrupo = async (req, res) => {
 
       const pool = await poolPromise;
 
-      // 1️⃣ Verificar si el curso existe
       const cursoExiste = await pool
           .request()
           .input("cursoId", cursoId)
@@ -944,7 +950,6 @@ export const guardarGrupo = async (req, res) => {
           return res.status(404).json({ mensaje: "El curso no existe." });
       }
 
-      // 2️⃣ Insertar el nuevo grupo
       await pool
           .request()
           .input("codigoGrupo", grupoNumero)
@@ -958,6 +963,7 @@ export const guardarGrupo = async (req, res) => {
       res.status(201).json({ mensaje: "Grupo creado con éxito", grupoNumero });
   } catch (error) {
       console.error("Error al guardar el grupo:", error);
+      await GenerarBitacora(req.user.id, "Error al guardar un grupo", error);
       res.status(500).json({ mensaje: "Error interno del servidor" });
   }
 };
@@ -1125,7 +1131,6 @@ export const agregarProfesor = async (req, res) => {
       }
     }
 
-    // Array para almacenar promesas de envío de correos
     const emailPromises = [];
 
     for (const prof of profesoresData) {
@@ -1241,7 +1246,9 @@ export const agregarProfesor = async (req, res) => {
             </html>
           `,
         }).catch(error => {
+          GenerarBitacora(req.user.id, "Error al enviar uno o mas correos", error);
           console.error(`Error enviando correo a ${prof.email}:`, error);
+          
         })
       );
     }
@@ -1255,7 +1262,6 @@ export const agregarProfesor = async (req, res) => {
     let mensaje = '';
 
     if (nuevosProfesores.length > 0) {
-      const pdfPath = await generatePDF(nuevosProfesores, saltados);
       const pdfBuffer = fs.readFileSync(pdfPath);
       pdfBase64 = pdfBuffer.toString('base64');
 
@@ -1275,6 +1281,7 @@ export const agregarProfesor = async (req, res) => {
 
   } catch (error) {
     console.error("Error al agregar profesores:", error);
+    await GenerarBitacora(req.user.id, "Error al agregar uno o mas profesores", error);
     res.status(500).json({ mensaje: "Error interno del servidor" });
   }
 };
@@ -1297,9 +1304,12 @@ export const desvincularGrupo = async (req, res) => {
         WHERE Usuario_ID_FK = @profesorId AND GrupoCurso_ID_FK = @grupoId
       `);
 
+      await GenerarBitacora(req.user.id, "Un profesor fue desvinculador de su grupo", null);
+
     res.status(200).json({ message: 'Grupo desvinculado correctamente' });
   } catch (error) {
     console.error("Error desvinculando grupo:", error);
+    await GenerarBitacora(req.user.id, "Error al desvincular un curso", error);
     res.status(500).json({ error: "Error desvinculando grupo" });
   }
 };
@@ -1307,15 +1317,14 @@ export const desvincularGrupo = async (req, res) => {
 // Obtener todos los profesores
 export const getAllProfessors = async (req, res) => {
   try {
-      // Usar poolPromise para obtener la conexión y realizar la consulta
       const pool = await poolPromise;
       const result = await pool.request()
         .query("SELECT u.Usuario_ID_PK, u.Nombre, u.Apellido1, u.Apellido2, u.Correo FROM Usuario_TB u JOIN Rol_TB r ON u.Rol_ID_FK = r.Rol_ID_PK WHERE r.Rol = 'Profesor';");
 
-      // Responder con los datos obtenidos
       res.status(200).json({ professors: result.recordset });
   } catch (err) {
       console.error('Error al obtener profesores:', err);
+      await GenerarBitacora(req.user.id, "Error al obtener a todos los profesores", error);
       res.status(500).json({ error: 'Error al obtener profesores' });
   }
 };
@@ -1323,7 +1332,7 @@ export const getAllProfessors = async (req, res) => {
 
 export const getAllGroups = async (req, res) => {
   try {
-      const pool = await poolPromise; // Obtener la conexión
+      const pool = await poolPromise; 
       const result = await pool.request()
           .query(`
               SELECT gc.GrupoCurso_ID_PK, gc.Codigo_Grupo, cc.Nombre_Curso, cc.Codigo_Curso
@@ -1335,15 +1344,16 @@ export const getAllGroups = async (req, res) => {
       const formattedGroups = result.recordset.map(group => {
           return {
               id: group.GrupoCurso_ID_PK,
-              codigo: group.Codigo_Curso, // Código del curso
-              nombre: group.Nombre_Curso, // Nombre del curso
-              grupo: group.Codigo_Grupo, // Número de grupo
+              codigo: group.Codigo_Curso, 
+              nombre: group.Nombre_Curso, 
+              grupo: group.Codigo_Grupo,
           };
       });
 
       res.status(200).json({ groups: formattedGroups });
   } catch (error) {
       console.error("Error al obtener grupos:", error);
+      await GenerarBitacora(req.user.id, "Error al obtener a todos los cursos", error);
       res.status(500).json({ message: "Error al obtener los grupos" });
   }
 };
@@ -1372,12 +1382,13 @@ export const obtenerCursosDelProfesor = async (req, res) => {
       `;
 
       const result = await pool.request()
-          .input('profesorId', profesorId) // Parámetro para evitar SQL Injection
+          .input('profesorId', profesorId) 
           .query(query);
 
-      res.json(result.recordset); // Enviar los cursos como respuesta
+      res.json(result.recordset); 
   } catch (error) {
       console.error("Error obteniendo los cursos del profesor:", error);
+      await GenerarBitacora(req.user.id, "Error a obtener los cursos de un profesor", error);
       res.status(500).json({ error: "Error obteniendo los cursos del profesor." });
   }
 };
@@ -1409,6 +1420,7 @@ export const getGruposDisponibles = async (req, res) => {
       res.status(200).json({ grupos: result.recordset });
   } catch (error) {
       console.error("Error obteniendo grupos disponibles:", error);
+      await GenerarBitacora(req.user.id, "Error al obtener los cursos disponibles", error);
       res.status(500).json({ error: "Error obteniendo grupos disponibles" });
   }
 };
@@ -1426,9 +1438,11 @@ export const asignarGrupo = async (req, res) => {
               VALUES (@profesorId, @grupoId)
           `);
 
+      await GenerarBitacora(req.user.id, "Se le asigno un grupo a un profesor", null);    
       res.status(200).json({ message: 'Grupo asignado correctamente' });
   } catch (error) {
       console.error("Error asignando grupo:", error);
+      await GenerarBitacora(req.user.id, "Error al asignar un grupo", error);
       res.status(500).json({ error: "Error asignando grupo" });
   }
 };
@@ -1455,6 +1469,8 @@ export const editarPersonalizacion = async (req, res) => {
       return res.status(404).json({ error: "Personalización no encontrada" });
     }
 
+    await GenerarBitacora(req.user.id, "Personalizacion Editada", null);
+
     res.json({ 
       success: true,
       message: "Contenido actualizado correctamente"
@@ -1462,6 +1478,7 @@ export const editarPersonalizacion = async (req, res) => {
 
   } catch (error) {
     console.error("Error al editar personalización:", error);
+    await GenerarBitacora(req.user.id, "Error al editar una personalizacion", error);
     res.status(500).json({ error: "Error al editar la personalización" });
   }
 };
@@ -1487,6 +1504,8 @@ export const desactivarPersonalizacion = async (req, res) => {
       return res.status(404).json({ error: "Personalización no encontrada" });
     }
 
+    await GenerarBitacora(req.user.id, "Se desactivo una personalizacion", null);
+
     res.json({ 
       success: true,
       message: "Personalización desactivada correctamente"
@@ -1494,6 +1513,7 @@ export const desactivarPersonalizacion = async (req, res) => {
 
   } catch (error) {
     console.error("Error al desactivar personalización:", error);
+    await GenerarBitacora(req.user.id, "Error al desactivar una personalizacion", error);
     res.status(500).json({ error: "Error al desactivar la personalización" });
   }
 };
@@ -1514,6 +1534,8 @@ export const activarPersonalizacion = async (req, res) => {
       return res.status(404).json({ error: "Personalización no encontrada" });
     }
 
+    await GenerarBitacora(req.user.id, "Se activo una Personalizacion", null);
+
     res.json({ 
       success: true,
       message: "Personalización activada correctamente"
@@ -1521,6 +1543,7 @@ export const activarPersonalizacion = async (req, res) => {
 
   } catch (error) {
     console.error("Error al activar:", error);
+    await GenerarBitacora(req.user.id, "Error al activar una personalizacion", error);
     res.status(500).json({ error: "Error al activar la personalización" });
   }
 };
@@ -1529,7 +1552,6 @@ export const obtenerMetricasAdmin = async (req, res) => {
   try {
     const pool = await poolPromise;
     
-    // Primero necesitamos obtener los IDs de los roles
     const rolesQuery = `
       SELECT Rol_ID_PK, Rol
       FROM Rol_TB 
@@ -1538,42 +1560,36 @@ export const obtenerMetricasAdmin = async (req, res) => {
     
     const rolesResult = await pool.request().query(rolesQuery);
     
-    // Buscamos los IDs correspondientes
     const idEstudiante = rolesResult.recordset.find(r => r.Rol === 'Estudiante')?.Rol_ID_PK;
     const idProfesor = rolesResult.recordset.find(r => r.Rol === 'Profesor')?.Rol_ID_PK;
     
     if (!idEstudiante || !idProfesor) {
       throw new Error('No se encontraron los roles necesarios en la base de datos');
     }
-    
-    // Consulta para obtener partidas jugadas
+  
     const partidasQuery = `
       SELECT COUNT(DISTINCT Partida_ID_FK) AS partidasJugadas 
       FROM Resultados_TB
     `;
     
-    // Consulta para obtener cantidad de estudiantes
     const estudiantesQuery = `
       SELECT COUNT(*) AS totalEstudiantes 
       FROM Usuario_TB 
       WHERE Rol_ID_FK = @idEstudiante AND Estado = 1
     `;
     
-    // Consulta para obtener cantidad de profesores
     const profesoresQuery = `
       SELECT COUNT(*) AS totalProfesores 
       FROM Usuario_TB 
       WHERE Rol_ID_FK = @idProfesor AND Estado = 1
     `;
     
-    // Consulta para obtener personalizaciones totales con estado = 1
     const personalizacionesQuery = `
       SELECT COUNT(*) AS totalPersonalizaciones 
       FROM Personalizacion_TB 
       WHERE Estado = 1
     `;
     
-    // Ejecutar todas las consultas en paralelo
     const [
       partidasResult,
       estudiantesResult,
@@ -1590,7 +1606,6 @@ export const obtenerMetricasAdmin = async (req, res) => {
       pool.request().query(personalizacionesQuery)
     ]);
     
-    // Construir el objeto de respuesta
     const metricas = {
       partidasJugadas: partidasResult.recordset[0].partidasJugadas,
       totalEstudiantes: estudiantesResult.recordset[0].totalEstudiantes,
@@ -1601,6 +1616,7 @@ export const obtenerMetricasAdmin = async (req, res) => {
     res.json(metricas);
   } catch (error) {
     console.error("Error obteniendo métricas administrativas:", error);
+    await GenerarBitacora(req.user.id, "Error al obtener las metricas", error);
     res.status(500).json({ 
       error: "Error obteniendo las métricas administrativas.",
       details: error.message 
@@ -1609,14 +1625,13 @@ export const obtenerMetricasAdmin = async (req, res) => {
 };
 
 export const obtenerUsuariosPorGrupoId = async (req, res) => {
-    const { cursoId } = req.params;  // Aquí el nombre es cursoId, pero representa el GrupoCurso_ID_PK
+    const { cursoId } = req.params;  
 
     try {
         const pool = await poolPromise;
 
-        // Buscar profesor en ese grupo (Rol = Profesor)
         const profesorResult = await pool.request()
-            .input("grupoCursoId", cursoId)  // uso cursoId pero como grupoCursoId en la consulta
+            .input("grupoCursoId", cursoId)  
             .query(`
                 SELECT U.Usuario_ID_PK, U.Nombre, U.Apellido1, U.Apellido2, U.Correo
                 FROM GrupoVinculado_TB GV
@@ -1627,7 +1642,6 @@ export const obtenerUsuariosPorGrupoId = async (req, res) => {
 
         const profesor = profesorResult.recordset[0] || null;
 
-        // Buscar estudiantes en ese grupo (Rol = Estudiante)
         const estudiantesResult = await pool.request()
             .input("grupoCursoId", cursoId)
             .query(`
@@ -1647,18 +1661,17 @@ export const obtenerUsuariosPorGrupoId = async (req, res) => {
 
     } catch (error) {
         console.error("Error obteniendo detalles del grupo:", error);
+        await GenerarBitacora(req.user.id, "Error al obtener los usuarios de un grupo", error);
         res.status(500).json({ error: "Error al obtener detalles del grupo." });
     }
 };
 
-// Editar curso por su ID
 export const editarCurso = async (req, res) => {
   const { grupoCursoId, nuevoNombre, nuevoCodigo } = req.body;
 
   try {
     const pool = await poolPromise;
 
-    // 1. Obtener el ID del curso a partir del grupoCursoId
     const cursoResult = await pool.request()
       .input('grupoCursoId', grupoCursoId)
       .query(`
@@ -1672,7 +1685,6 @@ export const editarCurso = async (req, res) => {
 
     const cursoId = cursoResult.recordset[0].Curso_ID_FK;
 
-    // 2. Verificar si ya existe otro curso con el mismo código
     const codigoExistente = await pool.request()
       .input('nuevoCodigo', nuevoCodigo)
       .input('cursoId', cursoId)
@@ -1685,7 +1697,6 @@ export const editarCurso = async (req, res) => {
       return res.status(400).json({ error: 'Ya existe otro curso con ese código' });
     }
 
-    // 3. Editar el curso
     await pool.request()
       .input('cursoId', cursoId)
       .input('nuevoNombre', nuevoNombre)
@@ -1697,22 +1708,23 @@ export const editarCurso = async (req, res) => {
         WHERE CodigoCurso_ID_PK = @cursoId
       `);
 
+      await GenerarBitacora(req.user.id, "Un custo fue Editado", null);
+
     res.status(200).json({ message: 'Curso editado correctamente' });
   } catch (error) {
     console.error('Error editando curso:', error);
+    await GenerarBitacora(req.user.id, "Error al editar un grupo", error);
     res.status(500).json({ error: 'Error al editar el curso' });
   }
 };
 
 
-// Eliminar un curso, desvinculando primero los profesores
 export const eliminarCurso = async (req, res) => {
   const { grupoCursoId } = req.body;
 
   try {
     const pool = await poolPromise;
 
-    // 1. Verificar que el grupo existe
     const grupoResult = await pool.request()
       .input('grupoCursoId', grupoCursoId)
       .query(`
@@ -1724,7 +1736,6 @@ export const eliminarCurso = async (req, res) => {
       return res.status(404).json({ error: 'GrupoCurso no encontrado' });
     }
 
-    // 2. Desvincular profesores asignados a ese grupo
     await pool.request()
       .input('grupoCursoId', grupoCursoId)
       .query(`
@@ -1732,7 +1743,6 @@ export const eliminarCurso = async (req, res) => {
         WHERE GrupoCurso_ID_FK = @grupoCursoId
       `);
 
-    // 3. Eliminar el grupo en sí
     await pool.request()
       .input('grupoCursoId', grupoCursoId)
       .query(`
@@ -1740,17 +1750,14 @@ export const eliminarCurso = async (req, res) => {
         WHERE GrupoCurso_ID_PK = @grupoCursoId
       `);
 
+    await GenerarBitacora(req.user.id, "Curso Eliminado", null);
     res.status(200).json({ message: 'Grupo eliminado correctamente' });
   } catch (error) {
     console.error('Error eliminando grupo del curso:', error);
+    await GenerarBitacora(req.user.id, "Error al eliminar un curso", error);
     res.status(500).json({ error: 'Error al eliminar el grupo del curso' });
   }
 };
 
 
-
-
-
-
-export { generatePDF };
 
