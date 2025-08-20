@@ -38,6 +38,7 @@ function generateRandomPassword() {
 export const agregarUsuario = async (req, res) => {
   const { nombre, apellido1, apellido2, correo, rol, genero } = req.body;
 
+  console.log("Agregando usuario:", { nombre, apellido1, apellido2, correo, rol, genero });
   if (!nombre || !apellido1 || !apellido2 || !correo ||  !rol || !genero) {
     return res.status(400).json({ success: false, message: "Todos los campos son obligatorios" });
   }
