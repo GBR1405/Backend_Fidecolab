@@ -1,10 +1,11 @@
-import { poolPromise } from "../config/db.js"; 
+import { poolPromise } from "../config/db.js";
 import sql from "mssql";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import nodemailer from "nodemailer";
 import dotenv from "dotenv";
 import { GenerarBitacora } from "../controllers/generalController.js";
+import fetch from "node-fetch";
 
 dotenv.config();
 
@@ -40,7 +41,7 @@ export const agregarUsuario = async (req, res) => {
   const { nombre, apellido1, apellido2, correo, rol, genero } = req.body;
 
   console.log("Agregando usuario:", { nombre, apellido1, apellido2, correo, rol, genero });
-  if (!nombre || !apellido1 || !apellido2 || !correo ||  !rol || !genero) {
+  if (!nombre || !apellido1 || !apellido2 || !correo || !rol || !genero) {
     return res.status(400).json({ success: false, message: "Todos los campos son obligatorios" });
   }
 
@@ -79,91 +80,98 @@ export const agregarUsuario = async (req, res) => {
     const userId = result.recordset[0].Usuario_ID_PK;
 
     // Enviar correo de bienvenida
-    await transporter.sendMail({
-      from: `"Bienvenida a FideColab" <${process.env.EMAIL_USER}>`,
-      to: correo,
-      subject: "Bienvenido a FideColab",
-      html: `
-        <html>
-          <head>
-            <style>
-              body {
-                font-family: 'Arial', sans-serif;
-                background-color: #f4f6f9;
-                margin: 0;
-                padding: 0;
-                color: #333;
-              }
-              .container {
-                width: 100%;
-                max-width: 600px;
-                margin: 0 auto;
-                padding: 20px;
-                background-color: #ffffff;
-                border-radius: 8px;
-                box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
-              }
-              .header {
-                text-align: center;
-                padding: 20px;
-                background-color: rgb(19, 30, 173);
-                border-radius: 8px 8px 0 0;
-                color: #ffffff;
-              }
-              .header img {
-                width: 100px;
-                margin-bottom: 10px;
-              }
-              .content {
-                padding: 20px;
-                font-size: 16px;
-              }
-              .password-box {
-                background-color: #f8f9fa;
-                border: 1px solid #dee2e6;
-                border-radius: 4px;
-                padding: 15px;
-                margin: 20px 0;
-                text-align: center;
-                font-size: 18px;
-                font-weight: bold;
-                color: #dc3545;
-              }
-              .footer {
-                margin-top: 30px;
-                text-align: center;
-                font-size: 14px;
-                color: #888;
-              }
-              .footer p {
-                margin: 10px 0;
-              }
-            </style>
-          </head>
-          <body>
-            <div class="container">
-              <div class="header">
-                <img src="https://cdn.ufidelitas.ac.cr/wp-content/uploads/2023/11/17075151/FideLogo-04.png" alt="Logo" />
-                <h1>Bienvenido a FideColab</h1>
-              </div>
-              <div class="content">
-                <p>Hola ${nombre},</p>
-                <p>¡Bienvenido a FideColab! Se ha creado una cuenta para ti.</p>
-                <p>Tus credenciales de acceso son:</p>
-                <p><strong>Correo:</strong> ${correo}</p>
-                <div class="password-box">
-                  Contraseña: ${password}
-                </div>
-                <p>Te recomendamos cambiar esta contraseña después de iniciar sesión por primera vez.</p>
-                <p>¡Disfruta de la plataforma!</p>
-              </div>
-              <div class="footer">
-                <p>Si tienes problemas para acceder, por favor contacta con nuestro soporte.</p>
-              </div>
+    await fetch("https://api.brevo.com/v3/smtp/email", {
+      method: "POST",
+      headers: {
+        "api-key": process.env.BREVO_API_KEY,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        sender: { email: process.env.EMAIL_FROM, name: "FideColab" },
+        to: [{ email: correo }],
+        subject: "Bienvenido a FideColab",
+        htmlContent: `
+      <html>
+        <head>
+          <style>
+            body {
+              font-family: 'Arial', sans-serif;
+              background-color: #f4f6f9;
+              margin: 0;
+              padding: 0;
+              color: #333;
+            }
+            .container {
+              width: 100%;
+              max-width: 600px;
+              margin: 0 auto;
+              padding: 20px;
+              background-color: #ffffff;
+              border-radius: 8px;
+              box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+            }
+            .header {
+              text-align: center;
+              padding: 20px;
+              background-color: rgb(19, 30, 173);
+              border-radius: 8px 8px 0 0;
+              color: #ffffff;
+            }
+            .header img {
+              width: 100px;
+              margin-bottom: 10px;
+            }
+            .content {
+              padding: 20px;
+              font-size: 16px;
+            }
+            .password-box {
+              background-color: #f8f9fa;
+              border: 1px solid #dee2e6;
+              border-radius: 4px;
+              padding: 15px;
+              margin: 20px 0;
+              text-align: center;
+              font-size: 18px;
+              font-weight: bold;
+              color: #dc3545;
+            }
+            .footer {
+              margin-top: 30px;
+              text-align: center;
+              font-size: 14px;
+              color: #888;
+            }
+            .footer p {
+              margin: 10px 0;
+            }
+          </style>
+        </head>
+        <body>
+          <div class="container">
+            <div class="header">
+              <img src="https://cdn.ufidelitas.ac.cr/wp-content/uploads/2023/11/17075151/FideLogo-04.png" alt="Logo" />
+              <h1>Bienvenido a FideColab</h1>
             </div>
-          </body>
-        </html>
-      `,
+            <div class="content">
+              <p>Hola ${nombre},</p>
+              <p>¡Bienvenido a FideColab! Se ha creado una cuenta para ti.</p>
+              <p>Tus credenciales de acceso son:</p>
+              <p><strong>Correo:</strong> ${correo}</p>
+              <div class="password-box">
+                Contraseña: ${password}
+              </div>
+              <p>Te recomendamos cambiar esta contraseña después de iniciar sesión por primera vez.</p>
+              <p>¡Disfruta de la plataforma!</p>
+            </div>
+            <div class="footer">
+              <p>Si tienes problemas para acceder, por favor contacta con nuestro soporte.</p>
+            </div>
+          </div>
+        </body>
+      </html>
+    `
+      })
     });
 
     await GenerarBitacora(req.user.id, "Usuario agregado en modo debug", null);
@@ -383,11 +391,18 @@ export const restaurarContrasena = async (req, res) => {
       .query("UPDATE Usuario_TB SET Contraseña = @newPassword WHERE Usuario_ID_PK = @userId");
 
     // Enviar correo con la nueva contraseña
-    await transporter.sendMail({
-      from: `"Soporte FideColab" <${process.env.EMAIL_USER}>`,
-      to: userEmail,
-      subject: "Contraseña restablecida",
-      html: passwordResetEmailTemplate(userEmail, newPassword)
+    await fetch("https://api.brevo.com/v3/smtp/email", {
+      method: "POST",
+      headers: {
+        "api-key": process.env.BREVO_API_KEY,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        sender: { email: process.env.EMAIL_FROM, name: "Soporte FideColab" },
+        to: [{ email: userEmail }],
+        subject: "Contraseña restablecida",
+        htmlContent: passwordResetEmailTemplate(userEmail, newPassword)
+      })
     });
 
     await GenerarBitacora(req.user.id, "Contraseña restaurada en modo debug", null);
@@ -411,9 +426,9 @@ export const eliminarUsuario = async (req, res) => {
   console.log("Eliminando usuario con ID:", userId);
 
   if (isNaN(userId)) {
-    return res.status(400).json({ 
-      success: false, 
-      message: "ID de usuario debe ser un número válido" 
+    return res.status(400).json({
+      success: false,
+      message: "ID de usuario debe ser un número válido"
     });
   }
 
@@ -540,10 +555,10 @@ export const eliminarUsuario = async (req, res) => {
 
   } catch (error) {
     console.error("Error al eliminar usuario:", error);
-    return res.status(500).json({ 
-      success: false, 
+    return res.status(500).json({
+      success: false,
       message: "Error al eliminar usuario",
-      error: error.message 
+      error: error.message
     });
   }
 };
@@ -704,9 +719,9 @@ export const desactivarUsuario = async (req, res) => {
   const { userId } = req.params;
 
   if (isNaN(userId)) {
-    return res.status(400).json({ 
-      success: false, 
-      message: "ID de usuario debe ser un número válido" 
+    return res.status(400).json({
+      success: false,
+      message: "ID de usuario debe ser un número válido"
     });
   }
 
@@ -719,9 +734,9 @@ export const desactivarUsuario = async (req, res) => {
       .query("SELECT Estado FROM Usuario_TB WHERE Usuario_ID_PK = @userId");
 
     if (userCheck.recordset.length === 0) {
-      return res.status(404).json({ 
-        success: false, 
-        message: "Usuario no encontrado" 
+      return res.status(404).json({
+        success: false,
+        message: "Usuario no encontrado"
       });
     }
 
@@ -744,10 +759,10 @@ export const desactivarUsuario = async (req, res) => {
 
   } catch (error) {
     console.error("Error al cambiar estado del usuario:", error);
-    return res.status(500).json({ 
-      success: false, 
+    return res.status(500).json({
+      success: false,
       message: "Error al cambiar estado del usuario",
-      error: error.message 
+      error: error.message
     });
   }
 };
@@ -966,7 +981,7 @@ export const eliminarTodosEstudiantes = async (req, res) => {
 
       if (estudiantesIds.length > 0) {
         // 2. Eliminar participaciones
-         await transaction.request()
+        await transaction.request()
           .query(`
             DELETE FROM Participantes_TB 
             WHERE Usuario_ID_FK IN (${estudiantesIds.join(",")})
@@ -1137,7 +1152,7 @@ export const eliminarTodosProfesores = async (req, res) => {
 export const getAllUsers = async (req, res) => {
   try {
     const pool = await poolPromise;
-    
+
     const result = await pool.request().query(`
       SELECT 
         u.Usuario_ID_PK as id,
@@ -1169,10 +1184,10 @@ export const getAllUsers = async (req, res) => {
 
   } catch (error) {
     console.error("Error al obtener todos los usuarios:", error);
-    return res.status(500).json({ 
-      success: false, 
+    return res.status(500).json({
+      success: false,
       message: "Error al obtener los usuarios",
-      error: error.message 
+      error: error.message
     });
   }
 };
@@ -1184,9 +1199,9 @@ export const getFullBitacora = async (req, res) => {
   try {
     const { limit = 1000, page = 1 } = req.query;
     const offset = (page - 1) * limit;
-    
+
     const pool = await poolPromise;
-    
+
     // Consulta principal con paginación
     const result = await pool.request()
       .input('limit', sql.Int, limit)
@@ -1207,11 +1222,11 @@ export const getFullBitacora = async (req, res) => {
         OFFSET @offset ROWS
         FETCH NEXT @limit ROWS ONLY
       `);
-    
+
     // Consulta para el total de registros
     const countResult = await pool.request()
       .query('SELECT COUNT(*) as total FROM Bitacora_TB');
-    
+
     return res.status(200).json({
       success: true,
       total: countResult.recordset[0].total,
@@ -1225,10 +1240,10 @@ export const getFullBitacora = async (req, res) => {
 
   } catch (error) {
     console.error("Error al obtener la bitácora:", error);
-    return res.status(500).json({ 
-      success: false, 
+    return res.status(500).json({
+      success: false,
       message: "Error al obtener la bitácora",
-      error: error.message 
+      error: error.message
     });
   }
 };
@@ -1240,9 +1255,9 @@ export const getAllAchievementLogs = async (req, res) => {
   try {
     const { limit = 1000, page = 1 } = req.query;
     const offset = (page - 1) * limit;
-    
+
     const pool = await poolPromise;
-    
+
     // Consulta principal con paginación
     const result = await pool.request()
       .input('limit', sql.Int, limit)
@@ -1266,11 +1281,11 @@ export const getAllAchievementLogs = async (req, res) => {
         OFFSET @offset ROWS
         FETCH NEXT @limit ROWS ONLY
       `);
-    
+
     // Consulta para el total de registros
     const countResult = await pool.request()
       .query('SELECT COUNT(*) as total FROM Usuario_Logros_TB');
-    
+
     return res.status(200).json({
       success: true,
       total: countResult.recordset[0].total,
@@ -1281,10 +1296,10 @@ export const getAllAchievementLogs = async (req, res) => {
 
   } catch (error) {
     console.error("Error al obtener los logs de logros:", error);
-    return res.status(500).json({ 
-      success: false, 
+    return res.status(500).json({
+      success: false,
       message: "Error al obtener los logs de logros",
-      error: error.message 
+      error: error.message
     });
   }
 };
@@ -1330,10 +1345,10 @@ export const obtenerGruposUsuario = async (req, res) => {
 
   } catch (error) {
     console.error("Error al obtener grupos del usuario:", error);
-    return res.status(500).json({ 
-      success: false, 
+    return res.status(500).json({
+      success: false,
       message: "Error al obtener grupos del usuario",
-      error: error.message 
+      error: error.message
     });
   }
 };
@@ -1354,9 +1369,9 @@ export const desvincularGrupoUsuario = async (req, res) => {
       .query("SELECT * FROM GrupoVinculado_TB WHERE Usuario_ID_FK = @userId AND GrupoCurso_ID_FK = @grupoId");
 
     if (vinculacionCheck.recordset.length === 0) {
-      return res.status(404).json({ 
-        success: false, 
-        message: "Vinculación no encontrada" 
+      return res.status(404).json({
+        success: false,
+        message: "Vinculación no encontrada"
       });
     }
 
@@ -1375,10 +1390,10 @@ export const desvincularGrupoUsuario = async (req, res) => {
 
   } catch (error) {
     console.error("Error al desvincular grupo:", error);
-    return res.status(500).json({ 
-      success: false, 
+    return res.status(500).json({
+      success: false,
       message: "Error al desvincular grupo",
-      error: error.message 
+      error: error.message
     });
   }
 };
@@ -1403,9 +1418,9 @@ export const agregarGrupoUsuario = async (req, res) => {
       `);
 
     if (userCheck.recordset.length === 0) {
-      return res.status(404).json({ 
-        success: false, 
-        message: "Usuario no encontrado" 
+      return res.status(404).json({
+        success: false,
+        message: "Usuario no encontrado"
       });
     }
 
@@ -1418,9 +1433,9 @@ export const agregarGrupoUsuario = async (req, res) => {
       .query("SELECT * FROM GrupoCurso_TB WHERE GrupoCurso_ID_PK = @grupoId");
 
     if (grupoCheck.recordset.length === 0) {
-      return res.status(404).json({ 
-        success: false, 
-        message: "Grupo no encontrado" 
+      return res.status(404).json({
+        success: false,
+        message: "Grupo no encontrado"
       });
     }
 
@@ -1431,9 +1446,9 @@ export const agregarGrupoUsuario = async (req, res) => {
       .query("SELECT * FROM GrupoVinculado_TB WHERE Usuario_ID_FK = @userId AND GrupoCurso_ID_FK = @grupoId");
 
     if (vinculacionCheck.recordset.length > 0) {
-      return res.status(400).json({ 
-        success: false, 
-        message: "El usuario ya está vinculado a este grupo" 
+      return res.status(400).json({
+        success: false,
+        message: "El usuario ya está vinculado a este grupo"
       });
     }
 
@@ -1450,9 +1465,9 @@ export const agregarGrupoUsuario = async (req, res) => {
         `);
 
       if (profesorEnGrupoCheck.recordset.length > 0) {
-        return res.status(400).json({ 
-          success: false, 
-          message: "Ya existe un profesor vinculado a este grupo" 
+        return res.status(400).json({
+          success: false,
+          message: "Ya existe un profesor vinculado a este grupo"
         });
       }
     }
@@ -1475,10 +1490,10 @@ export const agregarGrupoUsuario = async (req, res) => {
 
   } catch (error) {
     console.error("Error al vincular grupo:", error);
-    return res.status(500).json({ 
-      success: false, 
+    return res.status(500).json({
+      success: false,
       message: "Error al vincular grupo",
-      error: error.message 
+      error: error.message
     });
   }
 };
@@ -1498,9 +1513,9 @@ export const desvincularUsuariosGrupo = async (req, res) => {
       .query("SELECT * FROM GrupoCurso_TB WHERE GrupoCurso_ID_PK = @grupoId");
 
     if (grupoCheck.recordset.length === 0) {
-      return res.status(404).json({ 
-        success: false, 
-        message: "Grupo no encontrado" 
+      return res.status(404).json({
+        success: false,
+        message: "Grupo no encontrado"
       });
     }
 
@@ -1525,10 +1540,10 @@ export const desvincularUsuariosGrupo = async (req, res) => {
 
   } catch (error) {
     console.error("Error al desvincular usuarios del grupo:", error);
-    return res.status(500).json({ 
-      success: false, 
+    return res.status(500).json({
+      success: false,
       message: "Error al desvincular usuarios del grupo",
-      error: error.message 
+      error: error.message
     });
   }
 };
@@ -1590,10 +1605,10 @@ export const obtenerGruposConUsuarios = async (req, res) => {
 
   } catch (error) {
     console.error("Error al obtener grupos con usuarios:", error);
-    return res.status(500).json({ 
-      success: false, 
+    return res.status(500).json({
+      success: false,
       message: "Error al obtener grupos con usuarios",
-      error: error.message 
+      error: error.message
     });
   }
 };
@@ -1618,9 +1633,9 @@ export const eliminarPersonalizacionesProfesor = async (req, res) => {
       `);
 
     if (profesorCheck.recordset.length === 0) {
-      return res.status(404).json({ 
-        success: false, 
-        message: "Profesor no encontrado o no es un profesor" 
+      return res.status(404).json({
+        success: false,
+        message: "Profesor no encontrado o no es un profesor"
       });
     }
 
@@ -1706,10 +1721,10 @@ export const eliminarPersonalizacionesProfesor = async (req, res) => {
 
   } catch (error) {
     console.error("Error al eliminar personalizaciones del profesor:", error);
-    return res.status(500).json({ 
-      success: false, 
+    return res.status(500).json({
+      success: false,
       message: "Error al eliminar personalizaciones del profesor",
-      error: error.message 
+      error: error.message
     });
   }
 };
@@ -1734,9 +1749,9 @@ export const eliminarPartidasProfesor = async (req, res) => {
       `);
 
     if (profesorCheck.recordset.length === 0) {
-      return res.status(404).json({ 
-        success: false, 
-        message: "Profesor no encontrado o no es un profesor" 
+      return res.status(404).json({
+        success: false,
+        message: "Profesor no encontrado o no es un profesor"
       });
     }
 
@@ -1796,10 +1811,10 @@ export const eliminarPartidasProfesor = async (req, res) => {
 
   } catch (error) {
     console.error("Error al eliminar partidas del profesor:", error);
-    return res.status(500).json({ 
-      success: false, 
+    return res.status(500).json({
+      success: false,
       message: "Error al eliminar partidas del profesor",
-      error: error.message 
+      error: error.message
     });
   }
 };
@@ -1824,9 +1839,9 @@ export const reiniciarLogrosEstudiante = async (req, res) => {
       `);
 
     if (estudianteCheck.recordset.length === 0) {
-      return res.status(404).json({ 
-        success: false, 
-        message: "Estudiante no encontrado o no es un estudiante" 
+      return res.status(404).json({
+        success: false,
+        message: "Estudiante no encontrado o no es un estudiante"
       });
     }
 
@@ -1845,10 +1860,10 @@ export const reiniciarLogrosEstudiante = async (req, res) => {
 
   } catch (error) {
     console.error("Error al reiniciar logros del estudiante:", error);
-    return res.status(500).json({ 
-      success: false, 
+    return res.status(500).json({
+      success: false,
       message: "Error al reiniciar logros del estudiante",
-      error: error.message 
+      error: error.message
     });
   }
 };
@@ -1894,10 +1909,10 @@ export const obtenerTodosGrupos = async (req, res) => {
 
   } catch (error) {
     console.error("Error al obtener todos los grupos:", error);
-    return res.status(500).json({ 
-      success: false, 
+    return res.status(500).json({
+      success: false,
       message: "Error al obtener todos los grupos",
-      error: error.message 
+      error: error.message
     });
   }
 };
@@ -1933,10 +1948,10 @@ export const obtenerHistorialPartidas = async (req, res) => {
     return res.status(200).json(historial);
   } catch (error) {
     console.error("Error al obtener historial de partidas:", error);
-    return res.status(500).json({ 
-      success: false, 
+    return res.status(500).json({
+      success: false,
       message: "Error al obtener historial de partidas",
-      error: error.message 
+      error: error.message
     });
   }
 };

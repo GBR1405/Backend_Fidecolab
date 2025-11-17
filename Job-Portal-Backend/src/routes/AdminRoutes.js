@@ -39,28 +39,4 @@ router.put('/editar-curso',authMiddleware, roleMiddleware(["Administrador"]), ed
 router.delete('/eliminar-curso',authMiddleware, roleMiddleware(["Administrador"]), eliminarCurso);
 
 
-//Prueba
-
-app.get("/test-smtp", async (req, res) => {
-  const net = require("net");
-  const socket = net.createConnection(587, "smtp-relay.brevo.com");
-
-  socket.setTimeout(4000);
-
-  socket.on("connect", () => {
-    res.send("PUERTO ABIERTO: Conexión exitosa a Brevo 587");
-    socket.end();
-  });
-
-  socket.on("timeout", () => {
-    res.send("TIMEOUT: Render bloqueó la conexión 😡");
-    socket.destroy();
-  });
-
-  socket.on("error", (err) => {
-    res.send("ERROR: " + err.message);
-    socket.destroy();
-  });
-});
-
 export default router;
