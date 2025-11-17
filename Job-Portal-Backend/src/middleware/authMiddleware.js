@@ -1,12 +1,15 @@
 import jwt from "jsonwebtoken";
 import cookieParser from "cookie-parser";
-import CryptoJS from "crypto-js"; // Asegúrate de tener CryptoJS importado
+import CryptoJS from "crypto-js";
 
-const secretKey = process.env.JWT_SECRET; // Asegúrate de definir esto en tu .env
+//Este archivo contiene el middleware de autenticación que verifica el JWT en las cookies de las solicitudes entrantes
+//Usalo cuando sea necesario, en realidad es mejor usarlo para todo, quitando login o los CRUD que no requieran un usuario autenticado
+
+const secretKey = process.env.JWT_SECRET; 
 
 export const authMiddleware = (req, res, next) => {
   try {
-      // Leer el JWT desde la cookie 'authToken'
+
       const token = req.cookies.authToken;
 
       if (!token) {
@@ -14,10 +17,8 @@ export const authMiddleware = (req, res, next) => {
           return res.status(401).json({ message: "No autorizado" });
       }
 
-      // Verificar el JWT
       const decoded = jwt.verify(token, secretKey);
 
-      // Adjuntar la información del usuario a la solicitud
       req.user = decoded;
       next();
   } catch (error) {

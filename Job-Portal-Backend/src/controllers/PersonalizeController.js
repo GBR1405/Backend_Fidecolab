@@ -371,7 +371,6 @@ export const obtenerPersonalizacionPorId = async (req, res) => {
     console.log("Obteniendo personalización por ID...");
     console.log("Headers:", req.body);
     
-    // Obtener el ID de los parámetros de consulta
     const { id } = req.body;
     if (!id) {
       return res.status(400).json({ 
@@ -382,7 +381,6 @@ export const obtenerPersonalizacionPorId = async (req, res) => {
 
     const pool = await poolPromise;
 
-    // 1. Obtener información básica de la personalización
     const personalizacionResult = await pool
       .request()
       .input("PersonalizacionID", sql.Int, id)
@@ -405,7 +403,6 @@ export const obtenerPersonalizacionPorId = async (req, res) => {
 
     const personalizacion = personalizacionResult.recordset[0];
 
-    // 2. Obtener juegos configurados
     const juegosResult = await pool
       .request()
       .input("PersonalizacionID", sql.Int, id)
@@ -425,7 +422,6 @@ export const obtenerPersonalizacionPorId = async (req, res) => {
 
     const juegos = juegosResult.recordset;
 
-    // 3. Obtener temas para cada juego (excepto Memoria)
     const juegosConTemas = await Promise.all(
       juegos.map(async (juego) => {
         if (juego.Juego === 'Memoria') {
@@ -451,7 +447,7 @@ export const obtenerPersonalizacionPorId = async (req, res) => {
         return {
           ...juego,
           temas: temasResult.recordset,
-          tema: juego.temaId  // Mantener el tema seleccionado
+          tema: juego.temaId  
         };
       })
     );

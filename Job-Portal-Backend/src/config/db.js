@@ -3,6 +3,7 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 // Configuración de la conexión a la base de datos
+// Se necesita un usuario en la base de datos para hacer que funcione por si algo
 
 const config = {
   user: process.env.DB_USER,
