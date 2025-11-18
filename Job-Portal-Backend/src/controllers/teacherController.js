@@ -28,14 +28,14 @@ const transporter = nodemailer.createTransport({
 
 
 export const obtenerCursosPersonalizados = async (req, res) => {
-    try {
-        const userId = req.user.id;  
+  try {
+    const userId = req.user.id;
 
-        // Realizar la consulta usando poolPromise
-        const pool = await poolPromise;  // Esperar la conexión al pool
-        const result = await pool.request()
-            .input('userId', sql.Int, userId)  // Añadir el parámetro para la consulta
-            .query(`
+    // Realizar la consulta usando poolPromise
+    const pool = await poolPromise;  // Esperar la conexión al pool
+    const result = await pool.request()
+      .input('userId', sql.Int, userId)  // Añadir el parámetro para la consulta
+      .query(`
                 SELECT 
                     p.Personalizacion_ID_PK,
                     p.Nombre_Personalizacion,
@@ -47,28 +47,28 @@ export const obtenerCursosPersonalizados = async (req, res) => {
                 GROUP BY p.Personalizacion_ID_PK, p.Nombre_Personalizacion
             `);
 
-        if (result.recordset.length === 0) {
-            return res.status(404).json({ message: "No se encontraron personalizaciones para este usuario." });
-        }
-
-        // Enviar los resultados
-        return res.json(result.recordset);
-
-    } catch (error) {
-        console.error("Error al obtener cursos personalizados:", error);
-        return res.status(500).json({ message: "Error al obtener cursos personalizados." });
+    if (result.recordset.length === 0) {
+      return res.status(404).json({ message: "No se encontraron personalizaciones para este usuario." });
     }
+
+    // Enviar los resultados
+    return res.json(result.recordset);
+
+  } catch (error) {
+    console.error("Error al obtener cursos personalizados:", error);
+    return res.status(500).json({ message: "Error al obtener cursos personalizados." });
+  }
 };
 
 export const obtenerGruposVinculados = async (req, res) => {
-    try {
-        const userId = req.user.id;  // ID del usuario extraído del token
+  try {
+    const userId = req.user.id;  // ID del usuario extraído del token
 
-        // Realizar la consulta usando el poolPromise
-        const pool = await poolPromise;  // Esperar la conexión al pool
-        const result = await pool.request()
-            .input('userId', sql.Int, userId)  // Añadir el parámetro para la consulta
-            .query(`
+    // Realizar la consulta usando el poolPromise
+    const pool = await poolPromise;  // Esperar la conexión al pool
+    const result = await pool.request()
+      .input('userId', sql.Int, userId)  // Añadir el parámetro para la consulta
+      .query(`
                 SELECT 
                     gv.GruposEncargados_ID_PK,
                     gc.Codigo_Grupo,
@@ -83,17 +83,17 @@ export const obtenerGruposVinculados = async (req, res) => {
                 WHERE gv.Usuario_ID_FK = @userId
             `);
 
-        if (result.recordset.length === 0) {
-            return res.status(404).json({ message: "No se encontraron grupos vinculados para este usuario." });
-        }
-
-        // Enviar los resultados
-        return res.json(result.recordset);
-
-    } catch (error) {
-        console.error("Error al obtener los grupos vinculados:", error);
-        return res.status(500).json({ message: "Error al obtener los grupos vinculados." });
+    if (result.recordset.length === 0) {
+      return res.status(404).json({ message: "No se encontraron grupos vinculados para este usuario." });
     }
+
+    // Enviar los resultados
+    return res.json(result.recordset);
+
+  } catch (error) {
+    console.error("Error al obtener los grupos vinculados:", error);
+    return res.status(500).json({ message: "Error al obtener los grupos vinculados." });
+  }
 };
 
 export const agregarEstudiante = async (req, res) => {
@@ -206,96 +206,124 @@ export const agregarEstudiante = async (req, res) => {
     // Enviar correos a los nuevos estudiantes
     for (const est of nuevosEstudiantes) {
       try {
-        await transporter.sendMail({
-          from: `"Bienvenida a FideColab" <${process.env.EMAIL_USER}>`,
-          to: est.email,
-          subject: "Bienvenido a FideColab",
-          html: `
-            <html>
-              <head>
-                <style>
-                  body {
-                    font-family: 'Arial', sans-serif;
-                    background-color: #f4f6f9;
-                    margin: 0;
-                    padding: 0;
-                    color: #333;
-                  }
-                  .container {
-                    width: 100%;
-                    max-width: 600px;
-                    margin: 0 auto;
-                    padding: 20px;
-                    background-color: #ffffff;
-                    border-radius: 8px;
-                    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
-                  }
-                  .header {
-                    text-align: center;
-                    padding: 20px;
-                    background-color: rgb(19, 30, 173);
-                    border-radius: 8px 8px 0 0;
-                    color: #ffffff;
-                  }
-                  .header img {
-                    width: 100px;
-                    margin-bottom: 10px;
-                  }
-                  .content {
-                    padding: 20px;
-                    font-size: 16px;
-                  }
-                  .password-box {
-                    background-color: #f8f9fa;
-                    border: 1px solid #dee2e6;
-                    border-radius: 4px;
-                    padding: 15px;
-                    margin: 20px 0;
-                    text-align: center;
-                    font-size: 18px;
-                    font-weight: bold;
-                    color: #dc3545;
-                  }
-                  .footer {
-                    margin-top: 30px;
-                    text-align: center;
-                    font-size: 14px;
-                    color: #888;
-                  }
-                  .footer p {
-                    margin: 10px 0;
-                  }
-                </style>
-              </head>
-              <body>
-                <div class="container">
-                  <div class="header">
-                    <img src="https://cdn.ufidelitas.ac.cr/wp-content/uploads/2023/11/17075151/FideLogo-04.png" alt="Logo" />
-                    <h1>Bienvenido a FideColab</h1>
-                  </div>
-                  <div class="content">
-                    <p>Hola ${est.name},</p>
-                    <p>¡Bienvenido a FideColab! Se ha creado una cuenta para ti.</p>
-                    <p>Tus credenciales de acceso son:</p>
-                    <p><strong>Correo:</strong> ${est.email}</p>
-                    <div class="password-box">
-                      Contraseña: ${est.generatedPassword}
-                    </div>
-                    <p>Te recomendamos cambiar esta contraseña después de iniciar sesión por primera vez.</p>
-                    <p>¡Disfruta de la plataforma!</p>
-                  </div>
-                  <div class="footer">
-                    <p>Si tienes problemas para acceder, por favor contacta con nuestro soporte.</p>
-                  </div>
-                </div>
-              </body>
-            </html>
-          `,
+        const htmlContent = `
+      <html>
+        <head>
+          <style>
+            body {
+              font-family: 'Arial', sans-serif;
+              background-color: #f4f6f9;
+              margin: 0;
+              padding: 0;
+              color: #333;
+            }
+            .container {
+              width: 100%;
+              max-width: 600px;
+              margin: 0 auto;
+              padding: 20px;
+              background-color: #ffffff;
+              border-radius: 8px;
+              box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+            }
+            .header {
+              text-align: center;
+              padding: 20px;
+              background-color: rgb(19, 30, 173);
+              border-radius: 8px 8px 0 0;
+              color: #ffffff;
+            }
+            .header img {
+              width: 100px;
+              margin-bottom: 10px;
+            }
+            .content {
+              padding: 20px;
+              font-size: 16px;
+            }
+            .password-box {
+              background-color: #f8f9fa;
+              border: 1px solid #dee2e6;
+              border-radius: 4px;
+              padding: 15px;
+              margin: 20px 0;
+              text-align: center;
+              font-size: 18px;
+              font-weight: bold;
+              color: #dc3545;
+            }
+            .footer {
+              margin-top: 30px;
+              text-align: center;
+              font-size: 14px;
+              color: #888;
+            }
+            .footer p {
+              margin: 10px 0;
+            }
+          </style>
+        </head>
+        <body>
+          <div class="container">
+            <div class="header">
+              <img src="https://cdn.ufidelitas.ac.cr/wp-content/uploads/2023/11/17075151/FideLogo-04.png" alt="Logo" />
+              <h1>Bienvenido a FideColab</h1>
+            </div>
+            <div class="content">
+              <p>Hola ${est.name},</p>
+              <p>¡Bienvenido a FideColab! Se ha creado una cuenta para ti.</p>
+              <p>Tus credenciales de acceso son:</p>
+              <p><strong>Correo:</strong> ${est.email}</p>
+              <div class="password-box">
+                Contraseña: ${est.generatedPassword}
+              </div>
+              <p>Te recomendamos cambiar esta contraseña después de iniciar sesión por primera vez.</p>
+              <p>¡Disfruta de la plataforma!</p>
+            </div>
+            <div class="footer">
+              <p>Si tienes problemas para acceder, por favor contacta con nuestro soporte.</p>
+            </div>
+          </div>
+        </body>
+      </html>
+    `;
+
+        // --- LLAMADA A BREVO API ---
+        const response = await fetch("https://api.brevo.com/v3/smtp/email", {
+          method: "POST",
+          headers: {
+            "api-key": process.env.BREVO_API_KEY,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            sender: {
+              email: process.env.EMAIL_FROM,
+              name: "FideColab"
+            },
+            to: [
+              {
+                email: est.email,
+                name: est.name
+              }
+            ],
+            subject: "Bienvenido a FideColab",
+            htmlContent,
+          }),
         });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(`Error Brevo → ${response.status}: ${JSON.stringify(data)}`);
+        }
+
+        console.log(`Correo enviado a ${est.email}`, data);
+
       } catch (emailError) {
         console.error(`Error al enviar el correo a ${est.email}:`, emailError);
       }
     }
+
 
     const mensaje = nuevosEstudiantes.length > 0
       ? saltados === 0
@@ -315,46 +343,46 @@ export const agregarEstudiante = async (req, res) => {
 
 export const obtenerEstudiantesPorProfesor = async (req, res) => {
   try {
-      const profesorId = req.user.id;
+    const profesorId = req.user.id;
 
-      const pool = await poolPromise;
+    const pool = await poolPromise;
 
-      // Obtener los grupos en los que el profesor está vinculado
-      const gruposResult = await pool.request()
-          .input("profesorId", sql.Int, profesorId)
-          .query(`
+    // Obtener los grupos en los que el profesor está vinculado
+    const gruposResult = await pool.request()
+      .input("profesorId", sql.Int, profesorId)
+      .query(`
               SELECT GrupoCurso_ID_FK 
               FROM GrupoVinculado_TB 
               WHERE Usuario_ID_FK = @profesorId
           `);
 
-      if (gruposResult.recordset.length === 0) {
-          return res.status(404).json({ mensaje: "El profesor no está vinculado a ningún grupo." });
-      }
+    if (gruposResult.recordset.length === 0) {
+      return res.status(404).json({ mensaje: "El profesor no está vinculado a ningún grupo." });
+    }
 
-      const gruposIds = gruposResult.recordset.map(row => row.GrupoCurso_ID_FK);
+    const gruposIds = gruposResult.recordset.map(row => row.GrupoCurso_ID_FK);
 
-      // Obtener el ID del rol 'Estudiante'
-      const rolResult = await pool.request()
-          .query(`SELECT Rol_ID_PK FROM Rol_TB WHERE Rol = 'Estudiante'`);
+    // Obtener el ID del rol 'Estudiante'
+    const rolResult = await pool.request()
+      .query(`SELECT Rol_ID_PK FROM Rol_TB WHERE Rol = 'Estudiante'`);
 
-      if (rolResult.recordset.length === 0) {
-          return res.status(400).json({ mensaje: "El rol 'Estudiante' no está disponible en la base de datos." });
-      }
+    if (rolResult.recordset.length === 0) {
+      return res.status(400).json({ mensaje: "El rol 'Estudiante' no está disponible en la base de datos." });
+    }
 
-      const rolId = rolResult.recordset[0].Rol_ID_PK;
+    const rolId = rolResult.recordset[0].Rol_ID_PK;
 
-      // Usar IN para los grupos y pasar todos los IDs de grupo como un solo parámetro
-      const gruposIdsStr = gruposIds.map((grupoId, index) => `@grupoId${index}`).join(", ");
+    // Usar IN para los grupos y pasar todos los IDs de grupo como un solo parámetro
+    const gruposIdsStr = gruposIds.map((grupoId, index) => `@grupoId${index}`).join(", ");
 
-      // Crear la consulta dinámicamente para agregar los parámetros
-      let request = pool.request().input("rolId", sql.Int, rolId);
-      gruposIds.forEach((grupoId, index) => {
-          request = request.input(`grupoId${index}`, sql.Int, grupoId);
-      });
+    // Crear la consulta dinámicamente para agregar los parámetros
+    let request = pool.request().input("rolId", sql.Int, rolId);
+    gruposIds.forEach((grupoId, index) => {
+      request = request.input(`grupoId${index}`, sql.Int, grupoId);
+    });
 
-      // Obtener todos los estudiantes vinculados a esos grupos y agregar el código de curso y número de grupo
-      const estudiantesResult = await request.query(`
+    // Obtener todos los estudiantes vinculados a esos grupos y agregar el código de curso y número de grupo
+    const estudiantesResult = await request.query(`
               SELECT U.Usuario_ID_PK, 
                      U.Nombre, 
                      U.Apellido1, 
@@ -371,94 +399,94 @@ export const obtenerEstudiantesPorProfesor = async (req, res) => {
               AND U.Rol_ID_FK = @rolId
           `);
 
-      res.json({
-          success: true,
-          estudiantes: estudiantesResult.recordset
-      });
-      console.log(estudiantesResult);
+    res.json({
+      success: true,
+      estudiantes: estudiantesResult.recordset
+    });
+    console.log(estudiantesResult);
   } catch (error) {
-      console.error("Error al obtener los estudiantes:", error);
-      res.status(500).json({ mensaje: "Error interno del servidor" });
+    console.error("Error al obtener los estudiantes:", error);
+    res.status(500).json({ mensaje: "Error interno del servidor" });
   }
 };
 
 export const startSimulation = async (req, res) => {
-    const { personalizationId, grupoID } = req.body;
-    const userId = req.user.id;
+  const { personalizationId, grupoID } = req.body;
+  const userId = req.user.id;
 
-    console.log('Iniciando simulación:', req.body);
+  console.log('Iniciando simulación:', req.body);
 
-    try {
-        const pool = await poolPromise;
+  try {
+    const pool = await poolPromise;
 
-        // Verificar si hay una partida iniciada
-        const partidaIniciada = await pool.request()
-        .input('userId', sql.Int, userId)
-        .query(`
+    // Verificar si hay una partida iniciada
+    const partidaIniciada = await pool.request()
+      .input('userId', sql.Int, userId)
+      .query(`
             SELECT Partida_ID_PK, FechaInicio 
             FROM Partida_TB 
             WHERE Profesor_ID_FK = @userId 
             AND EstadoPartida IN ('iniciada', 'en proceso');
         `);
 
-        if (partidaIniciada.recordset.length > 0) {
-        const partida = partidaIniciada.recordset[0];
-        const fechaInicio = new Date(partida.FechaInicio);
-        const ahora = new Date();
-        const diferenciaHoras = (ahora - fechaInicio) / (1000 * 60 * 60);
+    if (partidaIniciada.recordset.length > 0) {
+      const partida = partidaIniciada.recordset[0];
+      const fechaInicio = new Date(partida.FechaInicio);
+      const ahora = new Date();
+      const diferenciaHoras = (ahora - fechaInicio) / (1000 * 60 * 60);
 
-        if (diferenciaHoras > 4 || ahora.getDate() !== fechaInicio.getDate()) {
-            // Partida vencida → frontend debe cerrarla
-            return res.status(200).json({ status: 1, partidaId: partida.Partida_ID_PK });
-        } else {
-            // Partida aún activa → preguntar si desea cancelarla
-            return res.status(200).json({ status: 2, partidaId: partida.Partida_ID_PK });
-        }
-        }
+      if (diferenciaHoras > 4 || ahora.getDate() !== fechaInicio.getDate()) {
+        // Partida vencida → frontend debe cerrarla
+        return res.status(200).json({ status: 1, partidaId: partida.Partida_ID_PK });
+      } else {
+        // Partida aún activa → preguntar si desea cancelarla
+        return res.status(200).json({ status: 2, partidaId: partida.Partida_ID_PK });
+      }
+    }
 
-        const grupoVinculado = await pool.request()
-            .input('grupoID', sql.Int, grupoID)
-            .query(`
+    const grupoVinculado = await pool.request()
+      .input('grupoID', sql.Int, grupoID)
+      .query(`
                 SELECT GrupoCurso_ID_FK 
                 FROM GrupoVinculado_TB 
                 WHERE GruposEncargados_ID_PK = @grupoID
             `);
 
-        if (grupoVinculado.recordset.length === 0) {
-            return res.status(404).json({ message: 'Grupo no encontrado' });
-        }
+    if (grupoVinculado.recordset.length === 0) {
+      return res.status(404).json({ message: 'Grupo no encontrado' });
+    }
 
-        const grupoCursoId_ = grupoVinculado.recordset[0].GrupoCurso_ID_FK;
+    const grupoCursoId_ = grupoVinculado.recordset[0].GrupoCurso_ID_FK;
 
-        // Insertar nueva partida
-        const nuevaPartida = await pool.request()
-            .input('fechaInicio', sql.DateTime, new Date())
-            .input('userId', sql.Int, userId)
-            .input('grupoCursoId', sql.Int, grupoCursoId_)
-            .input('personalizationId', sql.Int, personalizationId)
-            .query(`
+    // Insertar nueva partida
+    const nuevaPartida = await pool.request()
+      .input('fechaInicio', sql.DateTime, new Date())
+      .input('userId', sql.Int, userId)
+      .input('grupoCursoId', sql.Int, grupoCursoId_)
+      .input('personalizationId', sql.Int, personalizationId)
+      .query(`
                 INSERT INTO Partida_TB (FechaInicio, Profesor_ID_FK, Grupo_ID_FK, EstadoPartida, Personalizacion_ID_FK)
                 OUTPUT INSERTED.Partida_ID_PK
                 VALUES (@fechaInicio, @userId, @grupoCursoId, 'iniciada', @personalizationId)
             `);
 
-        const partidaId = nuevaPartida.recordset[0].Partida_ID_PK;
+    const partidaId = nuevaPartida.recordset[0].Partida_ID_PK;
 
-        // Obtener el GrupoCurso_ID_FK
-        const grupoCurso = await pool.request()
-            .input('grupoID', sql.Int, grupoID)
-            .query(`
+    // Obtener el GrupoCurso_ID_FK
+    const grupoCurso = await pool.request()
+      .input('grupoID', sql.Int, grupoID)
+      .query(`
                 SELECT GrupoCurso_ID_FK 
                 FROM GrupoVinculado_TB 
                 WHERE GruposEncargados_ID_PK = @grupoID
             `);
 
-        const grupoCursoId = grupoCurso.recordset[0].GrupoCurso_ID_FK;
+    const grupoCursoId = grupoCurso.recordset[0].GrupoCurso_ID_FK;
 
-        // Obtener todos los estudiantes del grupo
-        const estudiantes = await pool.request()
-            .input('grupoCursoId', sql.Int, grupoCursoId)
-            .query(`
+    // Obtener todos los estudiantes del grupo
+    const estudiantes = await pool.request()
+      .input('grupoCursoId', sql.Int, grupoCursoId)
+      .query(`
                 SELECT u.Usuario_ID_PK 
                 FROM Usuario_TB u
                 INNER JOIN GrupoVinculado_TB gv ON u.Usuario_ID_PK = gv.Usuario_ID_FK
@@ -466,173 +494,173 @@ export const startSimulation = async (req, res) => {
                 AND u.Rol_ID_FK = (SELECT Rol_ID_PK FROM Rol_TB WHERE Rol = 'estudiante')
             `);
 
-        const estudiantesIds = estudiantes.recordset.map(row => row.Usuario_ID_PK);
+    const estudiantesIds = estudiantes.recordset.map(row => row.Usuario_ID_PK);
 
-        // Dividir estudiantes en grupos de 4
-        const shuffleArray = (array) => {
-            for (let i = array.length - 1; i > 0; i--) {
-                const j = Math.floor(Math.random() * (i + 1));
-                [array[i], array[j]] = [array[j], array[i]];
-            }
-            return array;
-        };
+    // Dividir estudiantes en grupos de 4
+    const shuffleArray = (array) => {
+      for (let i = array.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [array[i], array[j]] = [array[j], array[i]];
+      }
+      return array;
+    };
 
-        const shuffledEstudiantes = shuffleArray(estudiantesIds);
+    const shuffledEstudiantes = shuffleArray(estudiantesIds);
 
-        // Asegurar que no haya grupos de menos de 3
-        const grupos = [];
-        let i = 0;
-        while (i < shuffledEstudiantes.length) {
-        const restantes = shuffledEstudiantes.length - i;
+    // Asegurar que no haya grupos de menos de 3
+    const grupos = [];
+    let i = 0;
+    while (i < shuffledEstudiantes.length) {
+      const restantes = shuffledEstudiantes.length - i;
 
-        if (restantes === 9 && shuffledEstudiantes.length === 9) {
-            grupos.push(shuffledEstudiantes.slice(i, i + 3));
-            i += 3;
-            grupos.push(shuffledEstudiantes.slice(i, i + 3));
-            i += 3;
-            grupos.push(shuffledEstudiantes.slice(i, i + 3));
-            break;
-        }
+      if (restantes === 9 && shuffledEstudiantes.length === 9) {
+        grupos.push(shuffledEstudiantes.slice(i, i + 3));
+        i += 3;
+        grupos.push(shuffledEstudiantes.slice(i, i + 3));
+        i += 3;
+        grupos.push(shuffledEstudiantes.slice(i, i + 3));
+        break;
+      }
 
-        if (restantes === 5 && shuffledEstudiantes.length === 5) {
-            grupos.push(shuffledEstudiantes.slice(i, i + 2));
-            i += 2;
-            grupos.push(shuffledEstudiantes.slice(i, i + 3));
-            break;
-        }
+      if (restantes === 5 && shuffledEstudiantes.length === 5) {
+        grupos.push(shuffledEstudiantes.slice(i, i + 2));
+        i += 2;
+        grupos.push(shuffledEstudiantes.slice(i, i + 3));
+        break;
+      }
 
-        if (restantes === 3 || restantes === 4) {
-            grupos.push(shuffledEstudiantes.slice(i, i + restantes));
-            break;
-        }
+      if (restantes === 3 || restantes === 4) {
+        grupos.push(shuffledEstudiantes.slice(i, i + restantes));
+        break;
+      }
 
-        if (restantes === 5) {
-            grupos.push(shuffledEstudiantes.slice(i, i + 3));
-            i += 3;
-            grupos.push(shuffledEstudiantes.slice(i, i + 3)); // toma solo 2, pendiente de ajustar si necesario
-            break;
-        }
+      if (restantes === 5) {
+        grupos.push(shuffledEstudiantes.slice(i, i + 3));
+        i += 3;
+        grupos.push(shuffledEstudiantes.slice(i, i + 3)); // toma solo 2, pendiente de ajustar si necesario
+        break;
+      }
 
-        if (restantes === 6) {
-            grupos.push(shuffledEstudiantes.slice(i, i + 3));
-            i += 3;
-            grupos.push(shuffledEstudiantes.slice(i, i + 3));
-            break;
-        }
+      if (restantes === 6) {
+        grupos.push(shuffledEstudiantes.slice(i, i + 3));
+        i += 3;
+        grupos.push(shuffledEstudiantes.slice(i, i + 3));
+        break;
+      }
 
-        if (restantes === 7) {
-            grupos.push(shuffledEstudiantes.slice(i, i + 4));
-            i += 4;
-            grupos.push(shuffledEstudiantes.slice(i, i + 3));
-            break;
-        }
-
+      if (restantes === 7) {
         grupos.push(shuffledEstudiantes.slice(i, i + 4));
         i += 4;
-        }
+        grupos.push(shuffledEstudiantes.slice(i, i + 3));
+        break;
+      }
+
+      grupos.push(shuffledEstudiantes.slice(i, i + 4));
+      i += 4;
+    }
 
     // 🔁 Revisión final: si el último grupo tiene 1 o 2 → reequilibrar
     const ultimo = grupos[grupos.length - 1];
     if (ultimo.length < 3 && grupos.length > 1) {
-        // Quitamos elementos de los grupos anteriores (de atrás hacia adelante)
-        const necesarios = 3 - ultimo.length;
+      // Quitamos elementos de los grupos anteriores (de atrás hacia adelante)
+      const necesarios = 3 - ultimo.length;
 
-        for (let j = grupos.length - 2; j >= 0 && grupos[j].length > 3 && ultimo.length < 3; j--) {
-            // Mover uno del grupo j al último
-            const mover = grupos[j].pop();
-            ultimo.push(mover);
-        }
+      for (let j = grupos.length - 2; j >= 0 && grupos[j].length > 3 && ultimo.length < 3; j--) {
+        // Mover uno del grupo j al último
+        const mover = grupos[j].pop();
+        ultimo.push(mover);
+      }
 
-        // Si aún no alcanza, combinar con anterior grupo
-        if (ultimo.length < 3) {
-            const penultimo = grupos[grupos.length - 2];
-            grupos[grupos.length - 2] = penultimo.concat(ultimo);
-            grupos.pop(); // eliminar último
-        }
+      // Si aún no alcanza, combinar con anterior grupo
+      if (ultimo.length < 3) {
+        const penultimo = grupos[grupos.length - 2];
+        grupos[grupos.length - 2] = penultimo.concat(ultimo);
+        grupos.pop(); // eliminar último
+      }
     }
 
-        // Insertar participantes en la tabla Participantes_TB
-        for (let i = 0; i < grupos.length; i++) {
-            for (const estudianteId of grupos[i]) {
-                await pool.request()
-                    .input('estudianteId', sql.Int, estudianteId)
-                    .input('equipoNumero', sql.Int, i + 1)
-                    .input('partidaId', sql.Int, partidaId)
-                    .query(`
+    // Insertar participantes en la tabla Participantes_TB
+    for (let i = 0; i < grupos.length; i++) {
+      for (const estudianteId of grupos[i]) {
+        await pool.request()
+          .input('estudianteId', sql.Int, estudianteId)
+          .input('equipoNumero', sql.Int, i + 1)
+          .input('partidaId', sql.Int, partidaId)
+          .query(`
                         INSERT INTO Participantes_TB (Usuario_ID_FK, Equipo_Numero, Partida_ID_FK)
                         VALUES (@estudianteId, @equipoNumero, @partidaId)
                     `);
-            }
-        }
-
-        // Crear una sala con el ID de la partida
-        io.emit('CreateRoom', partidaId);
-
-        // Unir a los estudiantes a la sala
-        for (const estudianteId of estudiantesIds) {
-            io.emit('JoinRoom', partidaId, estudianteId);
-        }
-
-        res.status(200).json({status: 3, message: 'Partida iniciada correctamente', partidaId });
-
-    } catch (error) {
-        console.error('Error al iniciar la simulación:', error);
-        res.status(500).json({ message: 'Error al iniciar la simulación' });
+      }
     }
+
+    // Crear una sala con el ID de la partida
+    io.emit('CreateRoom', partidaId);
+
+    // Unir a los estudiantes a la sala
+    for (const estudianteId of estudiantesIds) {
+      io.emit('JoinRoom', partidaId, estudianteId);
+    }
+
+    res.status(200).json({ status: 3, message: 'Partida iniciada correctamente', partidaId });
+
+  } catch (error) {
+    console.error('Error al iniciar la simulación:', error);
+    res.status(500).json({ message: 'Error al iniciar la simulación' });
+  }
 };
 
 export const cancelarPartida = async (req, res) => {
-    const userId = req.user.id;
+  const userId = req.user.id;
 
-    try {
-        const pool = await poolPromise;
+  try {
+    const pool = await poolPromise;
 
-        // Verificar si hay una partida iniciada
-        const partidaIniciada = await pool.request()
-            .input('userId', sql.Int, userId)
-            .query(`
+    // Verificar si hay una partida iniciada
+    const partidaIniciada = await pool.request()
+      .input('userId', sql.Int, userId)
+      .query(`
                 SELECT Partida_ID_PK 
                 FROM Partida_TB 
                 WHERE Profesor_ID_FK = @userId AND EstadoPartida IN ('iniciada', 'en proceso');
             `);
 
-        if (partidaIniciada.recordset.length > 0) {
-            const partidaId = partidaIniciada.recordset[0].Partida_ID_PK;
+    if (partidaIniciada.recordset.length > 0) {
+      const partidaId = partidaIniciada.recordset[0].Partida_ID_PK;
 
-            // Actualizar el estado de la partida a "finalizada"
-            await pool.request()
-                .input('partidaId', sql.Int, partidaId)
-                .input('fechaFin', sql.DateTime, new Date())
-                .query(`
+      // Actualizar el estado de la partida a "finalizada"
+      await pool.request()
+        .input('partidaId', sql.Int, partidaId)
+        .input('fechaFin', sql.DateTime, new Date())
+        .query(`
                     UPDATE Partida_TB 
                     SET EstadoPartida = 'finalizada', FechaFin = @fechaFin 
                     WHERE Partida_ID_PK = @partidaId
                 `);
 
-            // Notificar a los usuarios en la sala que la partida ha sido cancelada
-            io.to(`partida-${partidaId}`).emit('PartidaCancelada', { partidaId });
+      // Notificar a los usuarios en la sala que la partida ha sido cancelada
+      io.to(`partida-${partidaId}`).emit('PartidaCancelada', { partidaId });
 
-            // Destruir la sala en Socket.IO
-            const sala = io.sockets.adapter.rooms.get(`partida-${partidaId}`);
-            if (sala) {
-                // Forzar la desconexión de todos los sockets en la sala
-                sala.forEach(socketId => {
-                    io.sockets.sockets.get(socketId).disconnect(true); // Desconectar el socket
-                });
-            }
+      // Destruir la sala en Socket.IO
+      const sala = io.sockets.adapter.rooms.get(`partida-${partidaId}`);
+      if (sala) {
+        // Forzar la desconexión de todos los sockets en la sala
+        sala.forEach(socketId => {
+          io.sockets.sockets.get(socketId).disconnect(true); // Desconectar el socket
+        });
+      }
 
-            res.status(200).json({ message: 'Partida cancelada correctamente', partidaId });
-        } else {
-            res.status(404).json({ message: 'No hay partidas iniciadas para cancelar' });
-        }
-    } catch (error) {
-        console.error('Error al cancelar la partida:', error);
-        res.status(500).json({ message: 'Error al cancelar la partida' });
+      res.status(200).json({ message: 'Partida cancelada correctamente', partidaId });
+    } else {
+      res.status(404).json({ message: 'No hay partidas iniciadas para cancelar' });
     }
+  } catch (error) {
+    console.error('Error al cancelar la partida:', error);
+    res.status(500).json({ message: 'Error al cancelar la partida' });
+  }
 };
 
 
-  // Función para generar una contraseña aleatoria
+// Función para generar una contraseña aleatoria
 function generatePassword(nombre) {
   const base = nombre.trim().toLowerCase();
   const random = Math.random().toString(36).slice(-4);
@@ -640,7 +668,7 @@ function generatePassword(nombre) {
   const num = Math.floor(100 + Math.random() * 900);
   return `${capital}${base.slice(1)}${num}${random}`;
 }
-  
+
 
 // PDF para estudiantes
 async function generatePDF(estudiantes, saltados) {
@@ -687,8 +715,8 @@ async function generatePDF(estudiantes, saltados) {
         const saltadoMsg = saltados === 0
           ? 'No se omitió ningún estudiante.'
           : (saltados === estudiantes.length
-              ? 'Se omitieron todos los estudiantes.'
-              : `Se omitieron ${saltados} estudiantes ya existentes o vinculados.`);
+            ? 'Se omitieron todos los estudiantes.'
+            : `Se omitieron ${saltados} estudiantes ya existentes o vinculados.`);
         doc.text(saltadoMsg, { align: 'center' });
         currentY += 40;
       };
@@ -749,17 +777,17 @@ async function generatePDF(estudiantes, saltados) {
 
 // Desvincular un estudiante específico
 export const desvincularEstudiante = async (req, res) => {
-    try {
-        const { estudianteId } = req.body;
-        const profesorId = req.user.id;
+  try {
+    const { estudianteId } = req.body;
+    const profesorId = req.user.id;
 
-        const pool = await poolPromise;
+    const pool = await poolPromise;
 
-        // Verificar que el estudiante está vinculado a un grupo del profesor
-        const verificarVinculo = await pool.request()
-            .input('estudianteId', sql.Int, estudianteId)
-            .input('profesorId', sql.Int, profesorId)
-            .query(`
+    // Verificar que el estudiante está vinculado a un grupo del profesor
+    const verificarVinculo = await pool.request()
+      .input('estudianteId', sql.Int, estudianteId)
+      .input('profesorId', sql.Int, profesorId)
+      .query(`
                 DELETE gv
                 FROM GrupoVinculado_TB gv
                 INNER JOIN GrupoVinculado_TB gv2 
@@ -768,65 +796,65 @@ export const desvincularEstudiante = async (req, res) => {
                 AND gv2.Usuario_ID_FK = @profesorId
             `);
 
-        if (verificarVinculo.rowsAffected[0] === 0) {
-            return res.status(404).json({ 
-                success: false, 
-                mensaje: "No se encontró el estudiante vinculado a tus grupos" 
-            });
-        }
-
-        return res.json({ 
-            success: true, 
-            mensaje: "Estudiante desvinculado correctamente" 
-        });
-
-    } catch (error) {
-        console.error("Error al desvincular estudiante:", error);
-        return res.status(500).json({ 
-            success: false, 
-            mensaje: "Error al desvincular estudiante" 
-        });
+    if (verificarVinculo.rowsAffected[0] === 0) {
+      return res.status(404).json({
+        success: false,
+        mensaje: "No se encontró el estudiante vinculado a tus grupos"
+      });
     }
+
+    return res.json({
+      success: true,
+      mensaje: "Estudiante desvinculado correctamente"
+    });
+
+  } catch (error) {
+    console.error("Error al desvincular estudiante:", error);
+    return res.status(500).json({
+      success: false,
+      mensaje: "Error al desvincular estudiante"
+    });
+  }
 };
 
 // Desvincular todos los estudiantes de un curso
 export const desvincularTodosEstudiantes = async (req, res) => {
-    try {
-        const { grupoId } = req.body;
-        const profesorId = req.user.id;
+  try {
+    const { grupoId } = req.body;
+    const profesorId = req.user.id;
 
-        const pool = await poolPromise;
+    const pool = await poolPromise;
 
-        // Verificar que el profesor tiene acceso a este grupo
-        const verificarGrupo = await pool.request()
-            .input('grupoId', sql.Int, grupoId)
-            .input('profesorId', sql.Int, profesorId)
-            .query(`
+    // Verificar que el profesor tiene acceso a este grupo
+    const verificarGrupo = await pool.request()
+      .input('grupoId', sql.Int, grupoId)
+      .input('profesorId', sql.Int, profesorId)
+      .query(`
                 SELECT GrupoCurso_ID_FK 
                 FROM GrupoVinculado_TB 
                 WHERE GruposEncargados_ID_PK = @grupoId
                 AND Usuario_ID_FK = @profesorId
             `);
 
-        if (verificarGrupo.recordset.length === 0) {
-            return res.status(403).json({ 
-                success: false, 
-                mensaje: "No tienes permiso para este grupo" 
-            });
-        }
+    if (verificarGrupo.recordset.length === 0) {
+      return res.status(403).json({
+        success: false,
+        mensaje: "No tienes permiso para este grupo"
+      });
+    }
 
-        const grupoCursoId = verificarGrupo.recordset[0].GrupoCurso_ID_FK;
+    const grupoCursoId = verificarGrupo.recordset[0].GrupoCurso_ID_FK;
 
-        // Obtener ID del rol Estudiante
-        const rolResult = await pool.request()
-            .query(`SELECT Rol_ID_PK FROM Rol_TB WHERE Rol = 'Estudiante'`);
-        const rolId = rolResult.recordset[0].Rol_ID_PK;
+    // Obtener ID del rol Estudiante
+    const rolResult = await pool.request()
+      .query(`SELECT Rol_ID_PK FROM Rol_TB WHERE Rol = 'Estudiante'`);
+    const rolId = rolResult.recordset[0].Rol_ID_PK;
 
-        // Eliminar todos los estudiantes vinculados a este grupo
-        const resultado = await pool.request()
-            .input('grupoCursoId', sql.Int, grupoCursoId)
-            .input('rolId', sql.Int, rolId)
-            .query(`
+    // Eliminar todos los estudiantes vinculados a este grupo
+    const resultado = await pool.request()
+      .input('grupoCursoId', sql.Int, grupoCursoId)
+      .input('rolId', sql.Int, rolId)
+      .query(`
                 DELETE gv
                 FROM GrupoVinculado_TB gv
                 INNER JOIN Usuario_TB u ON gv.Usuario_ID_FK = u.Usuario_ID_PK
@@ -834,19 +862,19 @@ export const desvincularTodosEstudiantes = async (req, res) => {
                 AND u.Rol_ID_FK = @rolId
             `);
 
-        return res.json({ 
-            success: true, 
-            mensaje: `Se desvincularon ${resultado.rowsAffected[0]} estudiantes del grupo` 
-        });
+    return res.json({
+      success: true,
+      mensaje: `Se desvincularon ${resultado.rowsAffected[0]} estudiantes del grupo`
+    });
 
-    } catch (error) {
-        console.error("Error al desvincular estudiantes:", error);
-        return res.status(500).json({ 
-            success: false, 
-            mensaje: "Error al desvincular estudiantes" 
-        });
-    }
+  } catch (error) {
+    console.error("Error al desvincular estudiantes:", error);
+    return res.status(500).json({
+      success: false,
+      mensaje: "Error al desvincular estudiantes"
+    });
+  }
 };
 
-  
-  export { generatePDF };
+
+export { generatePDF };
