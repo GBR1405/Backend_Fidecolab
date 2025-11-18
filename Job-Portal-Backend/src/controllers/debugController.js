@@ -390,8 +390,11 @@ export const restaurarContrasena = async (req, res) => {
       .input("newPassword", sql.NVarChar, hashedPassword)
       .query("UPDATE Usuario_TB SET Contraseña = @newPassword WHERE Usuario_ID_PK = @userId");
 
-    // Enviar correo con la nueva contraseña
-    await fetch("https://api.brevo.com/v3/smtp/email", {
+    // ============================
+    //   LOG PARA VER RESPUESTA DE BREVO
+    // ============================
+
+    const response = await fetch("https://api.brevo.com/v3/smtp/email", {
       method: "POST",
       headers: {
         "api-key": process.env.BREVO_API_KEY,
@@ -405,6 +408,24 @@ export const restaurarContrasena = async (req, res) => {
       })
     });
 
+    const data = await response.json().catch(() => null);
+    const headers = Object.fromEntries(response.headers);
+
+    console.log("📨 BREVO RESPONSE STATUS:", response.status);
+    console.log("📨 BREVO RESPONSE HEADERS:", headers);
+    console.log("📨 BREVO RESPONSE BODY:", data);
+
+    if (!response.ok) {
+      console.error("❌ Brevo devolvió error:", data);
+      return res.status(500).json({
+        success: false,
+        message: "Error enviando correo",
+        brevo: data
+      });
+    }
+
+    // ============================
+
     await GenerarBitacora(req.user.id, "Contraseña restaurada en modo debug", null);
 
     return res.status(200).json({
@@ -417,6 +438,7 @@ export const restaurarContrasena = async (req, res) => {
     return res.status(500).json({ success: false, message: "Error al restaurar contraseña" });
   }
 };
+
 
 /**
  * Eliminar un usuario (con jerarquía según rol)
