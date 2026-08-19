@@ -17,6 +17,8 @@ const {
 const MAILJET_SEND_URL = "https://api.mailjet.com/v3.1/send";
 const MAILJET_SENDER_URL = "https://api.mailjet.com/v3/REST/sender";
 
+const APP_URL = "https://frontend-fidecolab.vercel.app/";
+
 // Mailjet acepta hasta 50 mensajes por request en la v3.1.
 const MAX_POR_LOTE = 50;
 
@@ -110,7 +112,7 @@ ${contenido}
 </html>`;
 }
 
-/** Recuadro rojo destacado para la contraseña. */
+
 function cajaPassword(password) {
   return `                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:20px 0;">
                   <tr>
@@ -120,6 +122,8 @@ function cajaPassword(password) {
                   </tr>
                 </table>`;
 }
+
+
 
 function plantillaBienvenida({ nombre, correo, password }) {
   return layoutBase({
@@ -131,7 +135,17 @@ function plantillaBienvenida({ nombre, correo, password }) {
                 <p style="margin:0 0 8px 0;"><strong>Correo:</strong> ${escapeHtml(correo)}</p>
 ${cajaPassword(`Contraseña: ${password}`)}
                 <p style="margin:0 0 14px 0;">Te recomendamos cambiar esta contraseña después de iniciar sesión por primera vez.</p>
-                <p style="margin:0;">¡Disfruta de la plataforma!</p>`,
+                <p style="margin:0 0 20px 0;">Ingresa a la plataforma aquí y ¡disfruta!</p>
+
+                <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center" style="margin:0 auto 20px auto;">
+                  <tr>
+                    <td align="center" style="background-color:rgb(19,30,173); border-radius:6px;">
+                      <a href="${APP_URL}" target="_blank" style="display:inline-block; padding:14px 32px; font-family:Arial, Helvetica, sans-serif; font-size:16px; font-weight:bold; color:#ffffff; text-decoration:none;">Entrar a FideColab</a>
+                    </td>
+                  </tr>
+                </table>
+
+                <p style="margin:0; font-size:13px; color:#888888; text-align:center;">Si el botón no funciona, copia este enlace: <a href="${APP_URL}" style="color:rgb(19,30,173);">${APP_URL}</a></p>`,
   });
 }
 
