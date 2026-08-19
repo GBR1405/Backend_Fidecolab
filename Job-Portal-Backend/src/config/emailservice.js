@@ -25,7 +25,7 @@ const MAX_POR_LOTE = 50;
 const TIMEOUT_MS = 20000;
 
 const LOGO_URL =
-  "https://cdn.ufidelitas.ac.cr/wp-content/uploads/2023/11/17075151/FideLogo-04.png";
+  "../public/FideLogo.png";
 
 // --- Validación al arrancar ---
 const faltantes = ["MJ_API_KEY", "MJ_SECRET_KEY", "EMAIL_FROM"].filter((k) => !process.env[k]);
