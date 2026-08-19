@@ -1,108 +1,81 @@
-// services/emailService.js
+// src/config/emailservice.js
 //
-// Archivo único y autocontenido: transporter + plantilla + envío.
-// Configurado para Gmail con App Password.
-//
-// Si tu proyecto usa CommonJS, cambiá los import/export por:
-//   const nodemailer = require("nodemailer");
-//   module.exports = { enviarCorreoBienvenida, verificarSMTP };
-
-import nodemailer from "nodemailer";
+// Envío por API HTTP de Mailjet (puerto 443), NO por SMTP.
+// Render bloquea los puertos SMTP salientes (25/465/587), por eso no se usa nodemailer acá.
 
 const {
-  EMAIL_USER,
-  EMAIL_PASS,
+  MJ_API_KEY,
+  MJ_SECRET_KEY,
   EMAIL_FROM,
   EMAIL_FROM_NAME = "FideColab",
-  EMAIL_HOST = "smtp.gmail.com",
-  EMAIL_PORT = "587",
-  EMAIL_DEBUG,
 } = process.env;
 
-// --- Validación al arrancar: mejor reventar acá que en el primer envío ---
-const faltantes = ["EMAIL_USER", "EMAIL_PASS", "EMAIL_FROM"].filter((k) => !process.env[k]);
+const MAILJET_URL = "https://api.mailjet.com/v3.1/send";
+
+// --- Validación al arrancar: mejor enterarse acá que en el primer registro ---
+const faltantes = ["MJ_API_KEY", "MJ_SECRET_KEY", "EMAIL_FROM"].filter((k) => !process.env[k]);
 if (faltantes.length) {
   console.error(`[mailer] Faltan variables de entorno: ${faltantes.join(", ")}`);
 }
 
-// Gmail SIEMPRE reescribe el remitente con la cuenta autenticada.
-// Si EMAIL_FROM no coincide con EMAIL_USER, el correo igual sale, pero
-// mostrando EMAIL_USER como remitente. Este aviso te ahorra el desconcierto.
-if (EMAIL_FROM && EMAIL_USER && EMAIL_FROM !== EMAIL_USER) {
-  console.warn(
-    `[mailer] EMAIL_FROM (${EMAIL_FROM}) no coincide con EMAIL_USER (${EMAIL_USER}). ` +
-      `Gmail lo va a sobrescribir con EMAIL_USER.`
-  );
-}
-
-// process.env devuelve strings -> hay que castear el puerto.
-const port = Number(EMAIL_PORT) || 587;
-
-// 465 = SSL desde el primer byte. 587 = arranca en claro y sube con STARTTLS.
-// Derivarlo del puerto evita el error clásico de cruzarlos y que se cuelgue sin mensaje.
-const secure = port === 465;
-
-const transporter = nodemailer.createTransport({
-  host: EMAIL_HOST,
-  port,
-  secure,
-
-  auth: {
-    user: EMAIL_USER,
-    pass: EMAIL_PASS, // App Password de 16 caracteres, SIN espacios
-  },
-
-  // Fuerza IPv4. En Render la resolución IPv6 hacia varios SMTP se queda colgada.
-  family: 4,
-
-  // Reusa conexiones en vez de abrir una nueva por cada correo.
-  pool: true,
-  maxConnections: 3,
-  maxMessages: 50,
-
-  // Sin timeouts, un puerto bloqueado deja la request colgada hasta que Render la mata.
-  connectionTimeout: 15000,
-  greetingTimeout: 10000,
-  socketTimeout: 20000,
-
-  // Poné EMAIL_DEBUG=true en Render para ver el diálogo SMTP completo en los logs.
-  logger: EMAIL_DEBUG === "true",
-  debug: EMAIL_DEBUG === "true",
-});
-
-const remitente = `"${EMAIL_FROM_NAME}" <${EMAIL_FROM}>`;
+// Mailjet autentica con Basic Auth: apiKey:secretKey en base64.
+const authHeader =
+  MJ_API_KEY && MJ_SECRET_KEY
+    ? `Basic ${Buffer.from(`${MJ_API_KEY}:${MJ_SECRET_KEY}`).toString("base64")}`
+    : null;
 
 const LOGO_URL =
   "https://cdn.ufidelitas.ac.cr/wp-content/uploads/2023/11/17075151/FideLogo-04.png";
 
 /**
- * Verifica credenciales y conectividad SIN mandar un correo real.
+ * Verifica credenciales SIN mandar un correo real.
+ * Consulta el endpoint de remitentes: si responde 200, las llaves sirven.
  * Llamalo una vez al levantar el server.
  */
-export async function verificarSMTP() {
+export async function verificarMailjet() {
+  if (!authHeader) {
+    console.error("[mailer] Sin credenciales de Mailjet configuradas.");
+    return false;
+  }
+
   try {
-    await transporter.verify();
-    console.log(`[mailer] Conexión OK -> ${EMAIL_HOST}:${port} (secure: ${secure})`);
+    const res = await fetch("https://api.mailjet.com/v3/REST/sender", {
+      headers: { Authorization: authHeader },
+    });
+
+    if (!res.ok) {
+      console.error(`[mailer] Mailjet rechazó las credenciales (HTTP ${res.status}).`);
+      if (res.status === 401) {
+        console.error("  -> Revisá MJ_API_KEY y MJ_SECRET_KEY.");
+      }
+      return false;
+    }
+
+    const data = await res.json();
+    const remitentes = (data.Data ?? []).map((s) => `${s.Email} [${s.Status}]`);
+
+    console.log(`[mailer] Conexión OK con Mailjet. Remitentes: ${remitentes.join(", ") || "ninguno"}`);
+
+    // El remitente tiene que estar verificado o Mailjet rechaza el envío.
+    const activo = (data.Data ?? []).find(
+      (s) => s.Email?.toLowerCase() === EMAIL_FROM?.toLowerCase() && s.Status === "Active"
+    );
+    if (!activo) {
+      console.warn(
+        `[mailer] OJO: ${EMAIL_FROM} no aparece como remitente Active. ` +
+          `Verificalo en Mailjet (Account Settings > Sender addresses) o los envíos van a fallar.`
+      );
+    }
+
     return true;
   } catch (error) {
-    console.error("[mailer] Falló la conexión SMTP:");
-    console.error(`  mensaje: ${error.message}`);
-    console.error(`  code: ${error.code ?? "n/a"} | responseCode: ${error.responseCode ?? "n/a"}`);
-
-    if (error.code === "EAUTH") {
-      console.error("  -> Credenciales rechazadas. Chequeá que EMAIL_PASS sea la App Password");
-      console.error("     de 16 caracteres sin espacios, y no la contraseña normal de la cuenta.");
-    }
-    if (["ETIMEDOUT", "ECONNREFUSED", "ESOCKET"].includes(error.code)) {
-      console.error("  -> No se pudo abrir el socket. Probá EMAIL_PORT=465 (con SSL directo).");
-    }
+    console.error("[mailer] No se pudo contactar a Mailjet:", error.message);
     return false;
   }
 }
 
 /**
  * Escapa caracteres que romperían el HTML si el nombre trae < > & " '
- * (un apellido tipo "O'Brien & Co" no debería reventar el template).
  */
 function escapeHtml(valor = "") {
   return String(valor)
@@ -114,10 +87,8 @@ function escapeHtml(valor = "") {
 }
 
 /**
- * NOTA sobre el <style> del template original:
- * Gmail (sobre todo la app móvil) y Outlook descartan las reglas CSS del <head>.
- * Tu correo llegaba sin diseño en buena parte de los clientes. Por eso acá todo
- * va inline y la estructura usa <table>, que renderiza parejo en todos lados.
+ * NOTA: Gmail (sobre todo la app móvil) y Outlook descartan las reglas CSS del <head>.
+ * Por eso todo va inline y la estructura usa <table>, que renderiza parejo en todos lados.
  */
 function plantillaBienvenida({ nombre, correo, password }) {
   const nombreSeguro = escapeHtml(nombre);
@@ -202,7 +173,7 @@ Si tienes problemas para acceder, contacta con nuestro soporte.`;
 }
 
 /**
- * Envía el correo de bienvenida.
+ * Envía el correo de bienvenida vía API de Mailjet.
  *
  * @param {{ nombre: string, correo: string, password: string }} datos
  * @returns {Promise<{ ok: boolean, messageId?: string, error?: string }>}
@@ -211,23 +182,62 @@ export async function enviarCorreoBienvenida({ nombre, correo, password }) {
   if (!correo) {
     return { ok: false, error: "No se recibió una dirección de destino." };
   }
+  if (!authHeader) {
+    return { ok: false, error: "Mailjet no está configurado (faltan las llaves)." };
+  }
+
+  // Si la API tarda, no dejamos el request colgado indefinidamente.
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 15000);
 
   try {
-    const info = await transporter.sendMail({
-      from: remitente,
-      to: correo,
-      subject: "Bienvenido a FideColab",
-      html: plantillaBienvenida({ nombre, correo, password }),
-      text: plantillaBienvenidaTexto({ nombre, correo, password }),
+    const res = await fetch(MAILJET_URL, {
+      method: "POST",
+      signal: controller.signal,
+      headers: {
+        Authorization: authHeader,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        Messages: [
+          {
+            From: { Email: EMAIL_FROM, Name: EMAIL_FROM_NAME },
+            To: [{ Email: correo, Name: nombre || correo }],
+            Subject: "Bienvenido a FideColab",
+            HTMLPart: plantillaBienvenida({ nombre, correo, password }),
+            TextPart: plantillaBienvenidaTexto({ nombre, correo, password }),
+          },
+        ],
+      }),
     });
 
-    console.log(`[mailer] Bienvenida enviada a ${correo} (id: ${info.messageId})`);
-    return { ok: true, messageId: info.messageId };
+    const data = await res.json().catch(() => null);
+
+    if (!res.ok) {
+      // Mailjet devuelve el detalle del error en el body, no solo en el status.
+      const detalle = JSON.stringify(data);
+      console.error(`[mailer] Mailjet respondió HTTP ${res.status}: ${detalle}`);
+      return { ok: false, error: `HTTP ${res.status}: ${detalle}` };
+    }
+
+    // Un 200 no garantiza el envío: hay que mirar el Status de cada mensaje.
+    const mensaje = data?.Messages?.[0];
+    if (mensaje?.Status !== "success") {
+      const detalle = JSON.stringify(mensaje?.Errors ?? mensaje);
+      console.error(`[mailer] Mailjet no aceptó el mensaje: ${detalle}`);
+      return { ok: false, error: detalle };
+    }
+
+    const messageId = mensaje?.To?.[0]?.MessageID;
+    console.log(`[mailer] Bienvenida enviada a ${correo} (id: ${messageId})`);
+    return { ok: true, messageId: String(messageId) };
   } catch (error) {
+    const msg = error.name === "AbortError" ? "Timeout contactando a Mailjet" : error.message;
     // No relanzamos: si falla el correo, el usuario ya quedó creado en la BD.
-    // Que no se caiga el endpoint completo por esto.
-    console.error(`[mailer] Error enviando bienvenida a ${correo}:`, error.message);
-    return { ok: false, error: error.message };
+    console.error(`[mailer] Error enviando bienvenida a ${correo}:`, msg);
+    return { ok: false, error: msg };
+  } finally {
+    clearTimeout(timeout);
   }
 }
 
