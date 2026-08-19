@@ -17,6 +17,7 @@ import simulationRoutes from './routes/SimulacionRoutes.js';
 import debugRoutes from './routes/debugRoutes.js';
 import seedrandom from 'seedrandom';
 import svg2img from 'svg2img';
+import { verificarSMTP } from "./config/emailservice.js";
 
 
 const app = express();
@@ -28,6 +29,7 @@ app.use(bodyParser.json({ limit: '50mb' }));
 app.use(bodyParser.urlencoded({ limit: '50mb', extended: true }));
 
 dotenv.config();
+verificarSMTP();
 
 app.use((req, res, next) => {
   res.header('Access-Control-Allow-Credentials', 'true');

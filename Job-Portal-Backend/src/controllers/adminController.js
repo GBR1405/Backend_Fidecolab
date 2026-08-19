@@ -10,6 +10,7 @@ import sql from 'mssql';
 import bcrypt from 'bcryptjs';
 import dotenv from "dotenv";
 import { GenerarBitacora } from "../controllers/generalController.js";
+import { verificarSMTP } from "../config/emailservice.js";
 import nodemailer from "nodemailer";
 
 dotenv.config();
@@ -19,19 +20,7 @@ const upload = multer({ storage });
 
 // Para el envio de correros Electronicos
 
-const transporter = nodemailer.createTransport({
-  host: process.env.EMAIL_HOST,
-  port: process.env.EMAIL_PORT,
-  secure: false,      // Brevo usa STARTTLS
-  auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASS,
-  },
-  tls: {
-    rejectUnauthorized: false,
-  },
-  family: 4, // 👈 Fuerza IPv4 (OBLIGATORIO en Render)
-});
+verificarSMTP();
 
 export const generateStudentsReport = async (req, res) => {
   try {
