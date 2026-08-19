@@ -18,10 +18,6 @@ dotenv.config();
 const storage = multer.memoryStorage();
 const upload = multer({ storage });
 
-// Para el envio de correros Electronicos
-
-verificarSMTP();
-
 export const generateStudentsReport = async (req, res) => {
   try {
     const pool = await poolPromise;
