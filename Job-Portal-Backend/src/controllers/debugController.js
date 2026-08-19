@@ -290,23 +290,12 @@ export const restaurarContrasena = async (req, res) => {
 
     if (!resultadoCorreo.ok) {
       console.error("No se pudo enviar el correo de reset:", resultadoCorreo.error);
-    }
-
-    const data = await response.json().catch(() => null);
-    const headers = Object.fromEntries(response.headers);
-
-    console.log("📨 BREVO RESPONSE STATUS:", response.status);
-    console.log("📨 BREVO RESPONSE HEADERS:", headers);
-    console.log("📨 BREVO RESPONSE BODY:", data);
-
-    if (!response.ok) {
-      console.error("❌ Brevo devolvió error:", data);
       return res.status(500).json({
-        success: false,
-        message: "Error enviando correo",
-        brevo: data
+        message: "La contraseña se restableció pero no se pudo enviar el correo. Contacta al administrador.",
       });
     }
+
+    return res.json({ message: "Contraseña restablecida. Revisa tu correo." });
 
     // ============================
 
