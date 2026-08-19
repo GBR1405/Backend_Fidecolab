@@ -5,25 +5,10 @@ import jwt from "jsonwebtoken";
 import nodemailer from "nodemailer";
 import dotenv from "dotenv";
 import { GenerarBitacora } from "../controllers/generalController.js";
-import { enviarCorreoBienvenida } from "../config/emailservice.js";
+import { enviarCorreoBienvenida, enviarCorreoPasswordReset } from "../config/emailservice.js";
 import fetch from "node-fetch";
 
 dotenv.config();
-
-// Configuración del transporter para correos (similar a authController)
-const transporter = nodemailer.createTransport({
-  host: process.env.EMAIL_HOST,
-  port: process.env.EMAIL_PORT,
-  secure: false,      // Brevo usa STARTTLS
-  auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASS,
-  },
-  tls: {
-    rejectUnauthorized: false,
-  },
-  family: 4, // 👈 Fuerza IPv4 (OBLIGATORIO en Render)
-});
 
 // Función para generar contraseña aleatoria
 function generateRandomPassword() {
@@ -293,29 +278,19 @@ export const restaurarContrasena = async (req, res) => {
     const newPassword = generateRandomPassword();
     const hashedPassword = await bcrypt.hash(newPassword, 10);
 
-    // Actualizar contraseña
     await pool.request()
       .input("userId", sql.Int, userId)
       .input("newPassword", sql.NVarChar, hashedPassword)
       .query("UPDATE Usuario_TB SET Contraseña = @newPassword WHERE Usuario_ID_PK = @userId");
 
-    // ============================
-    //   LOG PARA VER RESPUESTA DE BREVO
-    // ============================
-
-    const response = await fetch("https://api.brevo.com/v3/smtp/email", {
-      method: "POST",
-      headers: {
-        "api-key": process.env.BREVO_API_KEY,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        sender: { email: process.env.EMAIL_FROM, name: "Soporte FideColab" },
-        to: [{ email: userEmail }],
-        subject: "Contraseña restablecida",
-        htmlContent: passwordResetEmailTemplate(userEmail, newPassword)
-      })
+    const resultadoCorreo = await enviarCorreoPasswordReset({
+      correo: userEmail,
+      nuevaPassword: newPassword,
     });
+
+    if (!resultadoCorreo.ok) {
+      console.error("No se pudo enviar el correo de reset:", resultadoCorreo.error);
+    }
 
     const data = await response.json().catch(() => null);
     const headers = Object.fromEntries(response.headers);

@@ -11,6 +11,8 @@ import bcrypt from 'bcryptjs';
 import { io } from '../app.js';
 import nodemailer from "nodemailer";
 import { GenerarBitacora } from "../controllers/generalController.js";
+import { enviarCorreosBienvenidaMasivo  } from "../config/emailservice.js";
+
 
 const transporter = nodemailer.createTransport({
   host: process.env.EMAIL_HOST,
@@ -204,124 +206,11 @@ export const agregarEstudiante = async (req, res) => {
     }
 
     // Enviar correos a los nuevos estudiantes
-    for (const est of nuevosEstudiantes) {
-      try {
-        const htmlContent = `
-      <html>
-        <head>
-          <style>
-            body {
-              font-family: 'Arial', sans-serif;
-              background-color: #f4f6f9;
-              margin: 0;
-              padding: 0;
-              color: #333;
-            }
-            .container {
-              width: 100%;
-              max-width: 600px;
-              margin: 0 auto;
-              padding: 20px;
-              background-color: #ffffff;
-              border-radius: 8px;
-              box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
-            }
-            .header {
-              text-align: center;
-              padding: 20px;
-              background-color: rgb(19, 30, 173);
-              border-radius: 8px 8px 0 0;
-              color: #ffffff;
-            }
-            .header img {
-              width: 100px;
-              margin-bottom: 10px;
-            }
-            .content {
-              padding: 20px;
-              font-size: 16px;
-            }
-            .password-box {
-              background-color: #f8f9fa;
-              border: 1px solid #dee2e6;
-              border-radius: 4px;
-              padding: 15px;
-              margin: 20px 0;
-              text-align: center;
-              font-size: 18px;
-              font-weight: bold;
-              color: #dc3545;
-            }
-            .footer {
-              margin-top: 30px;
-              text-align: center;
-              font-size: 14px;
-              color: #888;
-            }
-            .footer p {
-              margin: 10px 0;
-            }
-          </style>
-        </head>
-        <body>
-          <div class="container">
-            <div class="header">
-              <img src="https://cdn.ufidelitas.ac.cr/wp-content/uploads/2023/11/17075151/FideLogo-04.png" alt="Logo" />
-              <h1>Bienvenido a FideColab</h1>
-            </div>
-            <div class="content">
-              <p>Hola ${est.name},</p>
-              <p>¡Bienvenido a FideColab! Se ha creado una cuenta para ti.</p>
-              <p>Tus credenciales de acceso son:</p>
-              <p><strong>Correo:</strong> ${est.email}</p>
-              <div class="password-box">
-                Contraseña: ${est.generatedPassword}
-              </div>
-              <p>Te recomendamos cambiar esta contraseña después de iniciar sesión por primera vez.</p>
-              <p>¡Disfruta de la plataforma!</p>
-            </div>
-            <div class="footer">
-              <p>Si tienes problemas para acceder, por favor contacta con nuestro soporte.</p>
-            </div>
-          </div>
-        </body>
-      </html>
-    `;
+    const { enviados, fallidos, detalles } = await enviarCorreosBienvenidaMasivo(nuevosEstudiantes);
 
-        // --- LLAMADA A BREVO API ---
-        const response = await fetch("https://api.brevo.com/v3/smtp/email", {
-          method: "POST",
-          headers: {
-            "api-key": process.env.BREVO_API_KEY,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            sender: {
-              email: process.env.EMAIL_FROM,
-              name: "FideColab"
-            },
-            to: [
-              {
-                email: est.email,
-                name: est.name
-              }
-            ],
-            subject: "Bienvenido a FideColab",
-            htmlContent,
-          }),
-        });
-
-        const data = await response.json();
-
-        if (!response.ok) {
-          throw new Error(`Error Brevo → ${response.status}: ${JSON.stringify(data)}`);
-        }
-
-        console.log(`Correo enviado a ${est.email}`, data);
-
-      } catch (emailError) {
-        console.error(`Error al enviar el correo a ${est.email}:`, emailError);
-      }
+    if (fallidos > 0) {
+      const correosFallidos = detalles.filter(d => !d.ok).map(d => d.correo);
+      console.error(`No se pudo enviar el correo a: ${correosFallidos.join(", ")}`);
     }
 
 
