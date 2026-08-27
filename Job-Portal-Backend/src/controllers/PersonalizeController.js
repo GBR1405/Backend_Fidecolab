@@ -436,9 +436,8 @@ export const obtenerPersonalizacionPorId = async (req, res) => {
           .request()
           .input("JuegoID", sql.Int, juego.Tipo_Juego_ID_PK)
           .query(`
-            SELECT 
+            SELECT
               Tema_Juego_ID_PK as id,
-              Nombre,
               Contenido
             FROM Tema_Juego_TB
             WHERE Tipo_Juego_ID_FK = @JuegoID
