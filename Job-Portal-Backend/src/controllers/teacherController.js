@@ -299,8 +299,88 @@ export const obtenerEstudiantesPorProfesor = async (req, res) => {
   }
 };
 
+const MIN_TEAM_SIZE = 2;
+const MAX_TEAM_SIZE = 10;
+
+// Distribuye una lista de IDs de estudiantes en equipos balanceados según el tamaño de equipo deseado.
+// Si la división exacta deja un grupo sobrante, ese sobrante se combina con el último grupo completo
+// y se reparte entre los dos para evitar equipos demasiado pequeños o inválidos (ej: 6 personas y
+// equipos de 5 -> en vez de [5,1] queda [3,3]).
+const distribuirEquipos = (estudiantesIds, teamSize) => {
+  const N = estudiantesIds.length;
+  const T = Math.min(MAX_TEAM_SIZE, Math.max(MIN_TEAM_SIZE, parseInt(teamSize, 10) || 4));
+
+  if (N === 0) return [];
+  if (N <= T) return [estudiantesIds.slice()];
+
+  const numFullGroups = Math.floor(N / T);
+  const remainder = N % T;
+
+  if (remainder === 0) {
+    const grupos = [];
+    for (let g = 0; g < numFullGroups; g++) {
+      grupos.push(estudiantesIds.slice(g * T, (g + 1) * T));
+    }
+    return grupos;
+  }
+
+  const untouchedGroupsCount = numFullGroups - 1;
+  const grupos = [];
+  for (let g = 0; g < untouchedGroupsCount; g++) {
+    grupos.push(estudiantesIds.slice(g * T, (g + 1) * T));
+  }
+
+  const combinedPool = estudiantesIds.slice(untouchedGroupsCount * T);
+
+  if (combinedPool.length >= MIN_TEAM_SIZE * 2) {
+    const half = Math.floor(combinedPool.length / 2);
+    grupos.push(combinedPool.slice(0, half));
+    grupos.push(combinedPool.slice(half));
+  } else {
+    grupos.push(combinedPool);
+  }
+
+  return grupos;
+};
+
+// Obtiene los IDs de todos los estudiantes vinculados a los grupos que maneja el profesor,
+// usado para validar que los equipos personalizados solo contengan alumnos propios del profesor.
+const getValidStudentIdsForProfesor = async (pool, profesorId) => {
+  const gruposResult = await pool.request()
+    .input('profesorId', sql.Int, profesorId)
+    .query(`
+      SELECT GrupoCurso_ID_FK
+      FROM GrupoVinculado_TB
+      WHERE Usuario_ID_FK = @profesorId
+    `);
+
+  const gruposIds = [...new Set(gruposResult.recordset.map(row => row.GrupoCurso_ID_FK))];
+  if (gruposIds.length === 0) return [];
+
+  const rolResult = await pool.request()
+    .query(`SELECT Rol_ID_PK FROM Rol_TB WHERE Rol = 'Estudiante'`);
+  if (rolResult.recordset.length === 0) return [];
+  const rolId = rolResult.recordset[0].Rol_ID_PK;
+
+  let request = pool.request().input('rolId', sql.Int, rolId);
+  const gruposIdsStr = gruposIds.map((grupoId, index) => {
+    request = request.input(`grupoId${index}`, sql.Int, grupoId);
+    return `@grupoId${index}`;
+  }).join(', ');
+
+  const estudiantesResult = await request.query(`
+    SELECT DISTINCT U.Usuario_ID_PK
+    FROM Usuario_TB U
+    INNER JOIN GrupoVinculado_TB GV ON U.Usuario_ID_PK = GV.Usuario_ID_FK
+    WHERE GV.GrupoCurso_ID_FK IN (${gruposIdsStr})
+    AND U.Rol_ID_FK = @rolId
+  `);
+
+  return estudiantesResult.recordset.map(row => row.Usuario_ID_PK);
+};
+
 export const startSimulation = async (req, res) => {
-  const { personalizationId, grupoID } = req.body;
+  const { personalizationId, grupoID, teamSize, customGroups } = req.body;
   const userId = req.user.id;
 
   console.log('Iniciando simulación:', req.body);
@@ -312,9 +392,9 @@ export const startSimulation = async (req, res) => {
     const partidaIniciada = await pool.request()
       .input('userId', sql.Int, userId)
       .query(`
-            SELECT Partida_ID_PK, FechaInicio 
-            FROM Partida_TB 
-            WHERE Profesor_ID_FK = @userId 
+            SELECT Partida_ID_PK, FechaInicio
+            FROM Partida_TB
+            WHERE Profesor_ID_FK = @userId
             AND EstadoPartida IN ('iniciada', 'en proceso');
         `);
 
@@ -336,8 +416,8 @@ export const startSimulation = async (req, res) => {
     const grupoVinculado = await pool.request()
       .input('grupoID', sql.Int, grupoID)
       .query(`
-                SELECT GrupoCurso_ID_FK 
-                FROM GrupoVinculado_TB 
+                SELECT GrupoCurso_ID_FK
+                FROM GrupoVinculado_TB
                 WHERE GruposEncargados_ID_PK = @grupoID
             `);
 
@@ -346,6 +426,69 @@ export const startSimulation = async (req, res) => {
     }
 
     const grupoCursoId_ = grupoVinculado.recordset[0].GrupoCurso_ID_FK;
+
+    // Determinar la distribución de estudiantes en equipos: personalizada (arrastrada por el profesor)
+    // o automática (a partir de la cantidad de estudiantes por equipo indicada)
+    const usaGruposPersonalizados = Array.isArray(customGroups) && customGroups.length > 0;
+    let grupos = [];
+    let estudiantesIds = [];
+
+    if (usaGruposPersonalizados) {
+      for (const equipo of customGroups) {
+        if (!Array.isArray(equipo) || equipo.length < MIN_TEAM_SIZE) {
+          return res.status(400).json({ message: `Cada equipo personalizado debe tener al menos ${MIN_TEAM_SIZE} estudiantes` });
+        }
+      }
+
+      const idsSanitizados = customGroups.map(equipo =>
+        equipo.map(id => parseInt(id, 10)).filter(id => !isNaN(id))
+      );
+      const idsFlatten = idsSanitizados.flat();
+
+      if (new Set(idsFlatten).size !== idsFlatten.length) {
+        return res.status(400).json({ message: 'Un mismo estudiante no puede estar en más de un equipo' });
+      }
+
+      const idsValidos = await getValidStudentIdsForProfesor(pool, userId);
+      const idsValidosSet = new Set(idsValidos);
+      const idsInvalidos = idsFlatten.filter(id => !idsValidosSet.has(id));
+
+      if (idsInvalidos.length > 0) {
+        return res.status(400).json({ message: 'Uno o más estudiantes seleccionados no pertenecen a tus grupos' });
+      }
+
+      grupos = idsSanitizados;
+      estudiantesIds = idsFlatten;
+
+    } else {
+      // Obtener todos los estudiantes del grupo seleccionado
+      const estudiantes = await pool.request()
+        .input('grupoCursoId', sql.Int, grupoCursoId_)
+        .query(`
+                    SELECT u.Usuario_ID_PK
+                    FROM Usuario_TB u
+                    INNER JOIN GrupoVinculado_TB gv ON u.Usuario_ID_PK = gv.Usuario_ID_FK
+                    WHERE gv.GrupoCurso_ID_FK = @grupoCursoId
+                    AND u.Rol_ID_FK = (SELECT Rol_ID_PK FROM Rol_TB WHERE Rol = 'estudiante')
+                `);
+
+      estudiantesIds = estudiantes.recordset.map(row => row.Usuario_ID_PK);
+
+      if (estudiantesIds.length < MIN_TEAM_SIZE) {
+        return res.status(400).json({ message: `No hay suficientes estudiantes en el grupo para iniciar una partida (mínimo ${MIN_TEAM_SIZE})` });
+      }
+
+      const shuffleArray = (array) => {
+        for (let i = array.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [array[i], array[j]] = [array[j], array[i]];
+        }
+        return array;
+      };
+
+      const shuffledEstudiantes = shuffleArray([...estudiantesIds]);
+      grupos = distribuirEquipos(shuffledEstudiantes, teamSize);
+    }
 
     // Insertar nueva partida
     const nuevaPartida = await pool.request()
@@ -360,113 +503,6 @@ export const startSimulation = async (req, res) => {
             `);
 
     const partidaId = nuevaPartida.recordset[0].Partida_ID_PK;
-
-    // Obtener el GrupoCurso_ID_FK
-    const grupoCurso = await pool.request()
-      .input('grupoID', sql.Int, grupoID)
-      .query(`
-                SELECT GrupoCurso_ID_FK 
-                FROM GrupoVinculado_TB 
-                WHERE GruposEncargados_ID_PK = @grupoID
-            `);
-
-    const grupoCursoId = grupoCurso.recordset[0].GrupoCurso_ID_FK;
-
-    // Obtener todos los estudiantes del grupo
-    const estudiantes = await pool.request()
-      .input('grupoCursoId', sql.Int, grupoCursoId)
-      .query(`
-                SELECT u.Usuario_ID_PK 
-                FROM Usuario_TB u
-                INNER JOIN GrupoVinculado_TB gv ON u.Usuario_ID_PK = gv.Usuario_ID_FK
-                WHERE gv.GrupoCurso_ID_FK = @grupoCursoId
-                AND u.Rol_ID_FK = (SELECT Rol_ID_PK FROM Rol_TB WHERE Rol = 'estudiante')
-            `);
-
-    const estudiantesIds = estudiantes.recordset.map(row => row.Usuario_ID_PK);
-
-    // Dividir estudiantes en grupos de 4
-    const shuffleArray = (array) => {
-      for (let i = array.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [array[i], array[j]] = [array[j], array[i]];
-      }
-      return array;
-    };
-
-    const shuffledEstudiantes = shuffleArray(estudiantesIds);
-
-    // Asegurar que no haya grupos de menos de 3
-    const grupos = [];
-    let i = 0;
-    while (i < shuffledEstudiantes.length) {
-      const restantes = shuffledEstudiantes.length - i;
-
-      if (restantes === 9 && shuffledEstudiantes.length === 9) {
-        grupos.push(shuffledEstudiantes.slice(i, i + 3));
-        i += 3;
-        grupos.push(shuffledEstudiantes.slice(i, i + 3));
-        i += 3;
-        grupos.push(shuffledEstudiantes.slice(i, i + 3));
-        break;
-      }
-
-      if (restantes === 5 && shuffledEstudiantes.length === 5) {
-        grupos.push(shuffledEstudiantes.slice(i, i + 2));
-        i += 2;
-        grupos.push(shuffledEstudiantes.slice(i, i + 3));
-        break;
-      }
-
-      if (restantes === 3 || restantes === 4) {
-        grupos.push(shuffledEstudiantes.slice(i, i + restantes));
-        break;
-      }
-
-      if (restantes === 5) {
-        grupos.push(shuffledEstudiantes.slice(i, i + 3));
-        i += 3;
-        grupos.push(shuffledEstudiantes.slice(i, i + 3)); // toma solo 2, pendiente de ajustar si necesario
-        break;
-      }
-
-      if (restantes === 6) {
-        grupos.push(shuffledEstudiantes.slice(i, i + 3));
-        i += 3;
-        grupos.push(shuffledEstudiantes.slice(i, i + 3));
-        break;
-      }
-
-      if (restantes === 7) {
-        grupos.push(shuffledEstudiantes.slice(i, i + 4));
-        i += 4;
-        grupos.push(shuffledEstudiantes.slice(i, i + 3));
-        break;
-      }
-
-      grupos.push(shuffledEstudiantes.slice(i, i + 4));
-      i += 4;
-    }
-
-    // 🔁 Revisión final: si el último grupo tiene 1 o 2 → reequilibrar
-    const ultimo = grupos[grupos.length - 1];
-    if (ultimo.length < 3 && grupos.length > 1) {
-      // Quitamos elementos de los grupos anteriores (de atrás hacia adelante)
-      const necesarios = 3 - ultimo.length;
-
-      for (let j = grupos.length - 2; j >= 0 && grupos[j].length > 3 && ultimo.length < 3; j--) {
-        // Mover uno del grupo j al último
-        const mover = grupos[j].pop();
-        ultimo.push(mover);
-      }
-
-      // Si aún no alcanza, combinar con anterior grupo
-      if (ultimo.length < 3) {
-        const penultimo = grupos[grupos.length - 2];
-        grupos[grupos.length - 2] = penultimo.concat(ultimo);
-        grupos.pop(); // eliminar último
-      }
-    }
 
     // Insertar participantes en la tabla Participantes_TB
     for (let i = 0; i < grupos.length; i++) {
@@ -490,7 +526,13 @@ export const startSimulation = async (req, res) => {
       io.emit('JoinRoom', partidaId, estudianteId);
     }
 
-    res.status(200).json({ status: 3, message: 'Partida iniciada correctamente', partidaId });
+    res.status(200).json({
+      status: 3,
+      message: 'Partida iniciada correctamente',
+      partidaId,
+      equipos: grupos.length,
+      distribucion: grupos.map(g => g.length)
+    });
 
   } catch (error) {
     console.error('Error al iniciar la simulación:', error);
